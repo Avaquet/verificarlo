@@ -672,6 +672,38 @@ comparison operations are not instrumented and default backends do not make use 
 this feature. If your backend requires instrumenting floating point comparisons, you
 must call `verificarlo` with the `--inst-fcmp` flag.
 
+## Precision customisation
+
+When the `--inst-func` flag is given, verificarlo instrument function's calls and 
+allow the user to specify the precision used for each function.
+
+To do it, set a new environement variable with the name of an output file:
+```
+$ export VFC_PREC_OUTPUT="output_filename.txt"
+```
+Each line of the output file have the folowing structure:
+```
+functionID isLibrary isIntrinsic haveFloat haveDouble prec64 range64 prec32 range32 n_calls
+```
+  - functionID is a string which indicate the file and the line of the function's call 
+  and the name of the called   function.
+  - isLibrary is a boolean (1 is true, 0 is false) wich indicate if the called function 
+  is from the user code or is from a library.
+  - isIntrinsic is the same as isLibrary but indicate if the called function is intrinsic or not.
+  - haveFloat is a boolean too and and is true if the usage of at least a float (single precision) have been detected, false if not.
+  - haveDouble is the same as haveFloat but with double (double precision).
+  - prec64 is the precision for double precision mantissa.
+  - range64 is the precision for double precision exponent.
+  - prec32 is the precision for simple precision mantissa.
+  - range32 is the precision for simple precision exponent.
+  - n_calls is the number of call to the function from this call site.
+
+Once the output file generated, replace precisions values by desired ones, unset the `VFC_PREC_OUTPUT` environement variable and set a new one for the input, with the same modified file:
+```
+$ export VFC_PREC_INPUT="input_filename.txt"
+```
+Now when you execute your code, the customised precision is used for each function.
+
 ## How to cite Verificarlo
 
 

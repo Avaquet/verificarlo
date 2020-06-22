@@ -35,6 +35,7 @@ PACKAGE_STRING = "@PACKAGE_STRING@"
 LIBDIR = "%LIBDIR%"
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__))
 libvfcinstrument = LIBDIR + '/libvfcinstrument.so'
+libvfcfuncinstrument = LIBDIR + '/libvfcfuncinstrument.so'
 mcalib_options = "-rpath {0} -L {0}".format(LIBDIR)
 mcalib_includes = PROJECT_ROOT + "/../include/"
 vfcwrapper = mcalib_includes + 'vfcwrapper.c'
@@ -98,7 +99,7 @@ def linker_mode(sources, options, output, args):
     extra_args = "-static " if args.static else "-fPIC "
     extra_args += "-DINST_FCMP " if args.inst_fcmp else ""
     extra_args += "-DDDEBUG " if args.ddebug else ""
-    shell('{clang} -c -O3 {extra_args} -o .vfcwrapper.o {vfcwrapper} -I {mcalib_includes}'.format(
+    shell('{clang} -c -Wno-varargs -O3 {extra_args} -o .vfcwrapper.o {vfcwrapper} -I {mcalib_includes}'.format(
         clang=clang,
         extra_args=extra_args,
         vfcwrapper=vfcwrapper,
@@ -109,13 +110,13 @@ def linker_mode(sources, options, output, args):
 
     f = tempfile.NamedTemporaryFile(mode='w+')
     if args.static:
-        f.write('{output} {sources} {options} -static .vfcwrapper.o -lmpfr -lgmp {gfortran} -lm -ldl'.format(
+        f.write('{output} {sources} {options} -static .vfcwrapper.o -lmpfr -lgmp {gfortran} -lm -ldl -rdynamic'.format(
             output=output,
             sources=' '.join([os.path.splitext(s)[0]+'.o' for s in sources]),
             options=options,
             gfortran=gfortran))
     else:
-        f.write('{output} {sources} {options} .vfcwrapper.o {mcalib_options} {gfortran} -ldl'.format(
+        f.write('{output} {sources} {options} .vfcwrapper.o {mcalib_options} {gfortran} -ldl -rdynamic'.format(
             output=output,
             sources=' '.join([os.path.splitext(s)[0]+'.o' for s in sources]),
             options=options,
@@ -131,18 +132,19 @@ def compiler_mode(sources, options, output, args):
     for source in sources:
         basename = os.path.splitext(source)[0]
         ir = basename + '.1.ll'
+        func = basename + '.2.ll'
         ins = basename + '.2.ll'
 
         # Compile to ir (fortran uses gcc+dragonegg, c uses clang)
         if is_fortran(source):
-            shell('{gcc} -c -S {source} {options} -fplugin={dragonegg} -fplugin-arg-dragonegg-emit-ir -o {ir}'.format(
+            shell('{gcc} -c -S -g {source} {options} -fplugin={dragonegg} -fplugin-arg-dragonegg-emit-ir -o {ir}'.format(
                 gcc=gcc,
                 source=source,
                 options=options,
                 dragonegg=dragonegg,
                 ir=ir))
         else:
-            shell('{clang} -c -S {source} -emit-llvm {options} -o {ir}'.format(
+            shell('{clang} -c -S -g {source} -emit-llvm {options} -o {ir}'.format(
                 clang=clang,
                 source=source,
                 options=options,
@@ -168,6 +170,17 @@ def compiler_mode(sources, options, output, args):
         if args.inst_fcmp:
             extra_args += "-vfclibinst-inst-fcmp "
 
+        if args.inst_func:
+            # Apply function instruction pass
+            shell('{opt} -S -load {libvfcfuncinstrument} -vfclibfunc {ir} -o {func}'.format(
+                opt=opt,
+                libvfcfuncinstrument=libvfcfuncinstrument,
+                ir=ir,
+                func=func
+                ))
+            ir = basename + '.2.ll'
+            ins = basename + '.3.ll'
+
         # Apply MCA instrumentation pass
         shell('{opt} -S  -load {libvfcinstrument} -vfclibinst {extra_args} {selectfunction} {ir} -o {ins}'.format(
             opt=opt,
@@ -177,6 +190,7 @@ def compiler_mode(sources, options, output, args):
             ir=ir,
             ins=ins
             ))
+
 
         if not output:
             output = '-o ' + basename + '.o'
@@ -199,6 +213,7 @@ if __name__ == "__main__":
     parser.add_argument('-static', '--static', action='store_true', help='produce a static binary')
     parser.add_argument('--verbose', action='store_true', help='verbose output')
     parser.add_argument('--inst-fcmp', action='store_true', help='instrument floating point comparisons')
+    parser.add_argument('--inst-func', action='store_true', help='instrument floating point functions')
     parser.add_argument('--version', action='version', version=PACKAGE_STRING)
     args, other = parser.parse_known_args()
 

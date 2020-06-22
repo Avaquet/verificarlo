@@ -456,6 +456,20 @@ void print_information_header(void *context) {
               ctx->ftz ? "true" : "false");
 }
 
+void _interflop_enter_function( interflop_function_stack_t *stack,
+                                int nb_args, 
+                                va_list ap)
+{
+
+}
+
+void _interflop_exit_function(  interflop_function_stack_t *stack,
+                                int nb_args, 
+                                va_list ap)
+{
+  
+}
+
 struct interflop_backend_interface_t interflop_init(int argc, char **argv,
                                                     void **context) {
 
@@ -485,7 +499,9 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
       _interflop_sub_double,
       _interflop_mul_double,
       _interflop_div_double,
-      NULL};
+      NULL,
+      _interflop_enter_function,
+      _interflop_exit_function};
 
   /* Initialize the seed */
   _set_mca_seed(ctx->choose_seed, ctx->seed);

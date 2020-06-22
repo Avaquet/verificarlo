@@ -341,6 +341,20 @@ void init_context(t_context *context) {
 
 static struct argp argp = {options, parse_opt, "", ""};
 
+void _interflop_enter_function( interflop_function_stack_t *stack,
+                                int nb_args, 
+                                va_list ap)
+{
+
+}
+
+void _interflop_exit_function(  interflop_function_stack_t *stack,
+                                int nb_args, 
+                                va_list ap)
+{
+  
+}
+
 struct interflop_backend_interface_t interflop_init(int argc, char **argv,
                                                     void **context) {
 
@@ -357,10 +371,18 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
   register_printf_bit();
 
   struct interflop_backend_interface_t interflop_backend_ieee = {
-      _interflop_add_float,  _interflop_sub_float,  _interflop_mul_float,
-      _interflop_div_float,  _interflop_cmp_float,  _interflop_add_double,
-      _interflop_sub_double, _interflop_mul_double, _interflop_div_double,
-      _interflop_cmp_double};
+      _interflop_add_float,  
+      _interflop_sub_float,  
+      _interflop_mul_float,
+      _interflop_div_float,  
+      _interflop_cmp_float, 
+      _interflop_add_double,
+      _interflop_sub_double, 
+      _interflop_mul_double, 
+      _interflop_div_double,
+      _interflop_cmp_double,
+      _interflop_enter_function,
+      _interflop_exit_function};
 
   return interflop_backend_ieee;
 }

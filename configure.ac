@@ -144,6 +144,7 @@ AC_CONFIG_FILES([Makefile
                  src/Makefile
                  src/common/Makefile
                  src/libvfcinstrument/Makefile
+                 src/libvfcfuncinstrument/Makefile
                  src/vfcwrapper/Makefile
                  src/backends/Makefile
                  src/backends/interflop-ieee/Makefile
@@ -151,7 +152,7 @@ AC_CONFIG_FILES([Makefile
                  src/backends/interflop-mca-mpfr/Makefile
                  src/backends/interflop-cancellation/Makefile
                  src/backends/interflop-bitmask/Makefile
-		 src/backends/interflop-vprec/Makefile
+		             src/backends/interflop-vprec/Makefile
                  tests/Makefile
                  tests/paths.sh
                 ])

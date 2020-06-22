@@ -1,5 +1,15 @@
 /* interflop backend interface */
 
+/* interflop list of specific backend or frontend calls.
+ * The instrumented code can request these operations through the function
+ * below interflop_call */
+enum INTERFLOP_CALL_OPCODE {
+  CUSTOM = -1,
+  SET_SEED = 0,
+  SET_PRECISION,
+  SET_MODE
+};
+
 /* interflop float compare predicates, follows the same order than
  * LLVM's FCMPInstruction predicates */
 enum FCMP_PREDICATE {
@@ -21,6 +31,37 @@ enum FCMP_PREDICATE {
   FCMP_TRUE,
 };
 
+typedef struct interflop_function_info
+{
+  // Indicate if the function is from library
+  char id[500];
+  // Indicate if the function is from library
+  char isLibraryFunction;
+  // Indicate if the function is intrinsic
+  char isIntrinsicFunction;
+  // Indicate if the function use float
+  char haveFloat;
+  // Indicate if the function use float
+  char haveDouble;
+  // mantissa precision for 64 bit float
+  int binary64_precision;
+  // mantissa precision for 64 bit float
+  int binary64_range;
+  // mantissa precision for 32 bit float
+  int binary32_precision;
+  // exponent precision for 32 bit float
+  int binary32_range;
+  // number of call for this function
+  int n_calls;
+}interflop_function_info_t;
+
+typedef struct interflop_function_stack
+{
+  interflop_function_info_t** functions;
+  int size;
+  int index;  
+}interflop_function_stack_t;
+
 struct interflop_backend_interface_t {
   void (*interflop_add_float)(float a, float b, float *c, void *context);
   void (*interflop_sub_float)(float a, float b, float *c, void *context);
@@ -35,6 +76,14 @@ struct interflop_backend_interface_t {
   void (*interflop_div_double)(double a, double b, double *c, void *context);
   void (*interflop_cmp_double)(enum FCMP_PREDICATE p, double a, double b,
                                int *c, void *context);
+
+  void (*interflop_enter_function)( interflop_function_stack_t *stack,
+                                    int nb_args, 
+                                    va_list ap);
+
+  void (*interflop_exit_function)(  interflop_function_stack_t *stack,
+                                    int nb_args, 
+                                    va_list ap);
 };
 
 /* interflop_init: called at initialization before using a backend.

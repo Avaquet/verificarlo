@@ -40,6 +40,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
+
 
 #include "../../common/float_const.h"
 #include "../../common/float_struct.h"
@@ -455,6 +457,96 @@ static inline double _vprec_binary64_binary_op(double a, double b,
   return res;
 }
 
+// Round the float with the given precision
+static float _vprec_round_binary32( float a,
+                                  int binary32_range,
+                                  int binary32_precision)
+{
+  if (!isfinite(a)) {
+    return a;
+  }
+
+  /* round to zero or set to infinity if underflow or overflow compare to
+   * VPRECLIB_BINARY32_RANGE */
+  int emax = (1 << (binary32_range - 1)) - 1;
+  int emin = (emax > 1) ? 1 - emax : -1;
+
+  binary32 aexp = {.f32 = a};
+
+  aexp.s32 = ((FLOAT_GET_EXP & aexp.u32) >> FLOAT_PMAN_SIZE) - FLOAT_EXP_COMP;
+
+  /* check for overflow or underflow in target range */
+  bool sp_case = false;
+  if (aexp.s32 > emax) {
+    a = a * INFINITY;
+    sp_case = true;
+  }
+
+  if (aexp.s32 <= emin) {
+    a = handle_binary32_denormal(a, emin, aexp.u32, binary32_precision);
+  }
+
+  /* Specials ops must be placed after denormal handling  */
+  /* If one of the operand raises an underflow, the operation */
+  /* has a different behavior. Example: x*Inf != 0*Inf */
+
+  if (sp_case) {
+    return a;
+  }
+
+  /* else, normal case: can be executed even if a
+     previously rounded and truncated as denormal */
+  if (binary32_precision < FLOAT_PMAN_SIZE) {
+    a = round_binary32_normal(a, binary32_precision);
+  }
+
+  return a;
+}
+
+// Round the double with the given precision
+static double _vprec_round_binary64(double a, 
+                                  int binary64_range, 
+                                  int binary64_precision)
+{
+  /* test if a or b are special cases */
+  if (!isfinite(a)) {
+    return a;
+  }
+
+  /* round to zero or set to infinity if underflow or overflow compare to
+   * VPRECLIB_BINARY64_RANGE */
+  int emax = (1 << (binary64_range - 1)) - 1;
+  int emin = (emax > 1) ? 1 - emax : -1;
+
+  binary64 aexp = {.f64 = a};
+  aexp.s64 = ((DOUBLE_GET_EXP & aexp.u64) >> DOUBLE_PMAN_SIZE) - DOUBLE_EXP_COMP;
+
+  /* check for overflow or underflow in target range */
+  bool sp_case = false;
+  if (aexp.s64 > emax) {
+    a = a * INFINITY;
+    sp_case = true;
+  }
+
+  if (aexp.s64 <= emin) {
+    a = handle_binary64_denormal(a, emin, aexp.u64, binary64_precision);
+  }
+
+  /* Special ops must be placed after denormal handling  */
+  /* If the operand raises an underflow, the operation */
+  /* has a different behavior. Example: x*Inf != 0*Inf */
+  if (sp_case) {
+    return a;
+  }
+
+  /* else normal case, can be executed even if a previously rounded and
+   * truncated as denormal */
+  if (binary64_precision < DOUBLE_PMAN_SIZE) {
+    a = round_binary64_normal(a, binary64_precision);
+  }
+
+  return a;
+}
 /************************* FPHOOKS FUNCTIONS *************************
  * These functions correspond to those inserted into the source code
  * during source to source compilation and are replacement to floating
@@ -650,6 +742,83 @@ void print_information_header(void *context) {
       key_ftz_str, ctx->ftz ? "true" : "false");
 }
 
+
+void _interflop_enter_function( interflop_function_stack_t *stack,
+                                int nb_args, 
+                                va_list ap)
+{
+  interflop_function_info_t* function_info = stack->functions[stack->index-1];
+
+  if (!function_info->isLibraryFunction && !function_info->isIntrinsicFunction){
+    _set_vprec_precision_binary64(function_info->binary64_precision);
+    _set_vprec_range_binary64(function_info->binary64_range);
+    _set_vprec_precision_binary32(function_info->binary32_precision);
+    _set_vprec_range_binary32(function_info->binary32_range);
+  }else if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)){
+    for (int i = 0; i < nb_args; i++){
+      char* type = va_arg(ap, char*);
+
+      if (strcmp(type, "double") == 0){
+        double *value = va_arg(ap, double*);
+        *value = _vprec_round_binary64( *value, 
+                                      function_info->binary64_range, 
+                                      function_info->binary64_precision);
+      }else if (strcmp(type, "float") == 0){
+        float *value = va_arg(ap, float*);
+        *value = _vprec_round_binary32( *value, 
+                                      function_info->binary32_range, 
+                                      function_info->binary32_precision);
+      }else{
+        void *value = va_arg(ap, void*);
+      }
+    }
+  }
+}
+
+void _interflop_exit_function(  interflop_function_stack_t *stack,
+                                int nb_args, 
+                                va_list ap)
+{
+  interflop_function_info_t* function_info = stack->functions[stack->index-1];
+
+  if (!function_info->isLibraryFunction && !function_info->isIntrinsicFunction){
+    _set_vprec_precision_binary64(function_info->binary64_precision);
+    _set_vprec_range_binary64(function_info->binary64_range);
+    _set_vprec_precision_binary32(function_info->binary32_precision);
+    _set_vprec_range_binary32(function_info->binary32_range);
+  }else if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)){
+    for (int i = 0; i < nb_args; i++){
+      char* type = va_arg(ap, char*);
+
+      if(strcmp(type, "double") == 0){
+        double *value = va_arg(ap, double*);
+        *value = _vprec_round_binary64( *value, 
+                                      function_info->binary64_range, 
+                                      function_info->binary64_precision);
+      }else if(strcmp(type, "float") == 0){
+        float *value = va_arg(ap, float*);
+        *value = _vprec_round_binary32( *value, 
+                                      function_info->binary32_range, 
+                                      function_info->binary32_precision);
+      }else{
+        void *value = va_arg(ap, void*);
+      }
+    }
+  }
+
+  if ((stack->index-1) == 0)
+    return;
+
+  interflop_function_info_t* parent_info = stack->functions[stack->index-2];
+
+  if (!parent_info->isLibraryFunction){
+    _set_vprec_precision_binary64(parent_info->binary64_precision);
+    _set_vprec_range_binary64(parent_info->binary64_range);
+    _set_vprec_precision_binary32(parent_info->binary32_precision);
+    _set_vprec_range_binary32(parent_info->binary32_range);
+  }
+}
+
 struct interflop_backend_interface_t interflop_init(int argc, char **argv,
                                                     void **context) {
 
@@ -682,7 +851,9 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
       _interflop_sub_double,
       _interflop_mul_double,
       _interflop_div_double,
-      NULL};
+      NULL,
+      _interflop_enter_function,
+      _interflop_exit_function};
 
   return interflop_backend_vprec;
 }
