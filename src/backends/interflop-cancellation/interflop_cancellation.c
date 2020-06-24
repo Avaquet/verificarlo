@@ -94,7 +94,7 @@ static inline double _noise_binary64(const int exp) {
    /* computes the difference between the max of both operands and the
     * exponent of the result to find the size of the cancellation */           \
     int cancellation = max(GET_EXP_FLT(X), GET_EXP_FLT(Y)) - e_z;              \
-    if (cancellation >= TOLERANCE) {                                           \
+    if (cancellation >= TOLERANCE && (*Z) != 0.0) {                                           \
       if (WARN) {                                                              \
         logger_info("cancellation of size %d detected\n", cancellation);       \
       }                                                                        \
