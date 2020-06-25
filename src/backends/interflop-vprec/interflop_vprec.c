@@ -756,14 +756,14 @@ void _interflop_enter_function( interflop_function_stack_t *stack,
     _set_vprec_range_binary32(function_info->binary32_range);
   }else if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)){
     for (int i = 0; i < nb_args; i++){
-      char* type = va_arg(ap, char*);
+      int type = va_arg(ap, int);
 
-      if (strcmp(type, "double") == 0){
+      if(type == DOUBLE_TYPE){
         double *value = va_arg(ap, double*);
         *value = _vprec_round_binary64( *value, 
                                       function_info->binary64_range, 
                                       function_info->binary64_precision);
-      }else if (strcmp(type, "float") == 0){
+      }else if(type == FLOAT_TYPE){
         float *value = va_arg(ap, float*);
         *value = _vprec_round_binary32( *value, 
                                       function_info->binary32_range, 
@@ -788,14 +788,14 @@ void _interflop_exit_function(  interflop_function_stack_t *stack,
     _set_vprec_range_binary32(function_info->binary32_range);
   }else if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)){
     for (int i = 0; i < nb_args; i++){
-      char* type = va_arg(ap, char*);
+      int type = va_arg(ap, int);
 
-      if(strcmp(type, "double") == 0){
+      if(type == DOUBLE_TYPE){
         double *value = va_arg(ap, double*);
         *value = _vprec_round_binary64( *value, 
                                       function_info->binary64_range, 
                                       function_info->binary64_precision);
-      }else if(strcmp(type, "float") == 0){
+      }else if(type == FLOAT_TYPE){
         float *value = va_arg(ap, float*);
         *value = _vprec_round_binary32( *value, 
                                       function_info->binary32_range, 

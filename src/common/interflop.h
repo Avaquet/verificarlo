@@ -31,6 +31,14 @@ enum FCMP_PREDICATE {
   FCMP_TRUE,
 };
 
+/* Datatype for functions's instrumentation */
+enum Ftypes { 
+  FLOAT_TYPE, 
+  FLOAT_ARRAY_TYPE, 
+  DOUBLE_TYPE, 
+  DOUBLE_ARRAY_TYPE
+};
+
 typedef struct interflop_function_info
 {
   // Indicate if the function is from library

@@ -82,31 +82,11 @@ void logger_error(const char *fmt, ...);
 static char *dd_filter_path = NULL;
 static char *dd_generate_path = NULL;
 
-/* input file variables */
-static char* vconfig_input_filename;
-static char vprec_input_used = 1;
-
-/* output file variables */
-static char* vconfig_output_filename;
-static char vprec_output_used = 1;
-
 /* Function instrumentation prototypes */
 
-void _vfc_print_table(FILE *f);
-void _vfc_init_table();
-void _vfc_free_table_and_stack();
-void vfc_enter_function(char* func_name, 
-                        char isLibraryFunction,
-                        char isIntrinsicFunction,
-                        char haveFloat,
-                        char haveDouble,
-                        int n, ...);
-void vfc_exit_function(char* func_name, 
-                        char isLibraryFunction,
-                        char isIntrinsicFunction,
-                        char haveFloat,
-                        char haveDouble,
-                        int n, ...);
+void vfc_init_func_inst();
+
+void vfc_quit_func_inst();
 
 /* Hashset implementation for deltadebug */
 
@@ -166,15 +146,7 @@ __attribute__((destructor)) static void vfc_atexit(void) {
   hashset_destroy(dd_must_instrument);
 #endif
 
-  if (vprec_output_used){
-    FILE* f = fopen(vconfig_output_filename, "w");
-    _vfc_print_table(f);
-    fclose(f);
-  }
-
-  vfc_exit_function("main", 0, 0, 1, 1, 0);
-
-  _vfc_free_table_and_stack();
+  vfc_quit_func_inst();
 }
 
 /* Checks that a least one of the loaded backend implements the chosen
@@ -210,6 +182,9 @@ __attribute__((constructor)) static void vfc_init(void) {
   } else {
     return;
   }
+
+  /* Initialize instumentation */
+  vfc_init_func_inst();
 
   /* Initialize the logger */
   logger_init();
@@ -331,24 +306,6 @@ __attribute__((constructor)) static void vfc_init(void) {
                 hashset_num_items(dd_must_instrument));
   }
 #endif
-
-    // check if precision input file is given 
-  vconfig_input_filename = getenv("VFC_PREC_INPUT");
-  if (vconfig_input_filename == NULL){
-    vprec_input_used = 0;
-  }
-
-  // check if profile output file is given 
-  vconfig_output_filename = getenv("VFC_PREC_OUTPUT");
-  if (vconfig_output_filename == NULL){
-    vprec_output_used = 0;
-  }
-
-  if (vprec_input_used){
-    _vfc_init_table();
-  }
-
-  vfc_enter_function("main", 0, 0, 1, 1, 0);
 }
 
 /* Arithmetic wrappers */

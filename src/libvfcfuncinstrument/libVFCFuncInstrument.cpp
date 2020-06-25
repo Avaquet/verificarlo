@@ -159,10 +159,10 @@ namespace {
 
       // Types string ptr
       IRBuilder<> Builder(&(*(*M.begin()).begin()));
-      Value *Types2val[] = {  Builder.CreateGlobalStringPtr("float"),
-                              Builder.CreateGlobalStringPtr("float*"),
-                              Builder.CreateGlobalStringPtr("double"),
-                              Builder.CreateGlobalStringPtr("double*")};            
+      Value *Types2val[] = {  ConstantInt::get(Int32Ty, 0),
+                                ConstantInt::get(Int32Ty, 1),
+                                ConstantInt::get(Int32Ty, 2),
+                                ConstantInt::get(Int32Ty, 0)};            
 
       /********************** Enter and exit functions declarations **********************/
       std::vector<Type *> ArgTypes;
@@ -188,10 +188,9 @@ namespace {
                                     ArgTypes, 
                                     true));
 
-      /********************** Function's calls instrumentation **********************/
-
       Function *func_exit = cast<Function>(func);
 
+      /********************** Function's calls instrumentation **********************/
        for (auto &F : M) {
         for (auto &B : F){
           IRBuilder<> Builder(&B);
@@ -285,26 +284,26 @@ namespace {
 
                 // Get type
                 Type* VType;
-                Value *TypeName;
+                Value *TypeID;
 
                 if (v->getType() == FloatTy){
                   VType = FloatTy;
-                  TypeName = Types2val[FLOAT];
+                  TypeID = Types2val[FLOAT];
                 }else if (v->getType() == FloatPtrTy){
                   VType = FloatPtrTy;
-                  TypeName = Types2val[FLOAT_ARRAY];
+                  TypeID = Types2val[FLOAT_ARRAY];
                 }else if (v->getType() == DoubleTy){
                   VType = DoubleTy;
-                  TypeName = Types2val[DOUBLE];
+                  TypeID = Types2val[DOUBLE];
                 }else if(v->getType() == DoublePtrTy){
                   VType = DoublePtrTy;
-                  TypeName = Types2val[DOUBLE_ARRAY];
+                  TypeID = Types2val[DOUBLE_ARRAY];
                 }else{
                   FunctionArgs.push_back(v);
                   continue;
                 }
 
-                EnterArgs.push_back(TypeName);
+                EnterArgs.push_back(TypeID);
 
                 // Allocate pointer
                 Constant *size = ConstantInt::get(Int32Ty, DL.getPrefTypeAlignment(VType));
@@ -337,26 +336,26 @@ namespace {
 
                 // Get type
                 Type* VType;
-                Value *TypeName;
+                Value *TypeID;
 
                 if (v->getType() == FloatTy){
                   VType = FloatTy;
-                  TypeName = Types2val[FLOAT];
+                  TypeID = Types2val[FLOAT];
                 }else if (v->getType() == FloatPtrTy){
                   VType = FloatPtrTy;
-                  TypeName = Types2val[FLOAT_ARRAY];
+                  TypeID = Types2val[FLOAT_ARRAY];
                 }else if (v->getType() == DoubleTy){
                   VType = DoubleTy;
-                  TypeName = Types2val[DOUBLE];
+                  TypeID = Types2val[DOUBLE];
                 }else if(v->getType() == DoublePtrTy){
                   VType = DoublePtrTy;
-                  TypeName = Types2val[DOUBLE_ARRAY];
+                  TypeID = Types2val[DOUBLE_ARRAY];
                 }else{
                   pi->eraseFromParent();
                   continue;
                 }
 
-                ExitArgs.push_back(TypeName);
+                ExitArgs.push_back(TypeID);
 
                 // Allocate pointer
                 Constant *size = ConstantInt::get(Int32Ty, DL.getPrefTypeAlignment(VType));
