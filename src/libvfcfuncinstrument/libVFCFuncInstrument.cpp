@@ -58,6 +58,16 @@ using namespace llvm;
 
 namespace {
 
+    static Type *Int8PtrTy;
+    static Type *Int8Ty;
+    static Type *Int32Ty;
+    static Type *Int64Ty;
+    static Type *FloatTy;
+    static Type *DoubleTy;
+    static Type *FloatPtrTy;
+    static Type *DoublePtrTy;
+    static Type *VoidTy;
+
   // Enumeration of managed types 
   enum Ftypes { FLOAT, FLOAT_ARRAY, DOUBLE, DOUBLE_ARRAY};
 
@@ -77,14 +87,9 @@ namespace {
                                       bool is_from_library, 
                                       bool is_intrinsic, 
                                       bool *have_float, 
-                                      bool *have_double,
-                                      Module &M)
+                                      bool *have_double)
     {
       Function *f = cast<CallInst>(pi)->getCalledFunction();
-      Type *FloatTy = Type::getFloatTy(M.getContext());
-      Type *DoubleTy = Type::getDoubleTy(M.getContext());
-      Type *FloatPtrTy = Type::getFloatPtrTy(M.getContext());
-      Type *DoublePtrTy = Type::getDoublePtrTy(M.getContext());
       Type* ReturnTy = pi->getType();
 
       // Test if return type of pi is float
@@ -142,37 +147,116 @@ namespace {
       return src;
     }
 
+    AllocaInst* allocatePtr(BasicBlock &B, const DataLayout &DL, Type* VType, std::string FunctionName)
+    {
+      static size_t cpt = 0;
+
+      Constant *size = ConstantInt::get(Int32Ty, DL.getPrefTypeAlignment(VType));
+      AllocaInst* ptr = new AllocaInst( VType, 
+                                        0, 
+                                        size, 
+                                        FunctionName + "_arg_" + std::to_string(cpt++));
+      ptr->insertBefore(&(*(B.begin())));
+
+      return ptr;
+    }
+
+    Type* fillArgs(bool is_enter, std::vector<Value*> &Args, Value* v, Value **Types2val, int &cpt)
+    {
+      Type* VType = NULL;
+      Type* T = v->getType();
+
+      if (T == FloatTy){
+        // Push the typeID
+        VType = FloatTy;
+        Args.push_back(Types2val[FLOAT]);
+
+        // Number of argument added
+        cpt += 2;
+
+      }else if (T == FloatPtrTy){
+        // Push the typeID
+        VType = FloatPtrTy;
+        Args.push_back(Types2val[FLOAT_ARRAY]);
+
+        size_t n_elements = 0;
+        if (isa<GetElementPtrInst>(v)){
+          Type *T = cast<PointerType>(cast<GetElementPtrInst>(v)->getPointerOperandType())->getElementType();
+          n_elements = cast<ArrayType>(T)->getNumElements();                  
+        }
+
+        // Size of the array
+        Constant *size_value = ConstantInt::get(Int64Ty, n_elements);
+        Args.push_back(size_value);
+
+        cpt += 3;
+
+        if (is_enter){
+          // Pointer on the original array
+          Args.push_back(v);
+          cpt++;
+        }
+
+      }else if (T == DoubleTy){
+        // Push the typeID
+        VType = DoubleTy;
+        Args.push_back(Types2val[DOUBLE]);
+
+        // Number of argument added
+        cpt += 2;
+
+      }else if(T == DoublePtrTy){
+        // Push the typeID
+        VType = DoublePtrTy;
+        Args.push_back(Types2val[DOUBLE_ARRAY]);
+
+        size_t n_elements = 0;
+        if (isa<GetElementPtrInst>(v)){
+          Type *T = cast<PointerType>(cast<GetElementPtrInst>(v)->getPointerOperandType())->getElementType();
+          n_elements = cast<ArrayType>(T)->getNumElements();                   
+        }
+
+        // Size of the array
+        Constant *size_value = ConstantInt::get(Int64Ty, n_elements);
+        Args.push_back(size_value);
+
+        cpt += 3;
+
+        if (is_enter){
+          // Pointer on the original array
+          Args.push_back(v);
+          cpt++;
+        }
+      }
+
+      return VType;
+    }
+
     virtual bool runOnModule(Module &M)
     {
       const TargetLibraryInfo *TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
       const DataLayout &DL = M.getDataLayout();
 
       // Types
-      Type *Int8PtrTy = Type::getInt8PtrTy(M.getContext());
-      Type *Int8Ty = Type::getInt8Ty(M.getContext());
-      Type *Int32Ty = Type::getInt32Ty(M.getContext());
-      Type *FloatTy = Type::getFloatTy(M.getContext());
-      Type *DoubleTy = Type::getDoubleTy(M.getContext());
-      Type *FloatPtrTy = Type::getFloatPtrTy(M.getContext());
-      Type *DoublePtrTy = Type::getDoublePtrTy(M.getContext());
-      Type *VoidTy = Type::getVoidTy(M.getContext());
+      Int8PtrTy = Type::getInt8PtrTy(M.getContext());
+      Int8Ty = Type::getInt8Ty(M.getContext());
+      Int32Ty = Type::getInt32Ty(M.getContext());
+      Int64Ty = Type::getInt64Ty(M.getContext());
+      FloatTy = Type::getFloatTy(M.getContext());
+      DoubleTy = Type::getDoubleTy(M.getContext());
+      FloatPtrTy = Type::getFloatPtrTy(M.getContext());
+      DoublePtrTy = Type::getDoublePtrTy(M.getContext());
+      VoidTy = Type::getVoidTy(M.getContext());
 
       // Types string ptr
       IRBuilder<> Builder(&(*(*M.begin()).begin()));
       Value *Types2val[] = {  ConstantInt::get(Int32Ty, 0),
                                 ConstantInt::get(Int32Ty, 1),
                                 ConstantInt::get(Int32Ty, 2),
-                                ConstantInt::get(Int32Ty, 0)};            
+                                ConstantInt::get(Int32Ty, 3)};            
 
       /********************** Enter and exit functions declarations **********************/
-      std::vector<Type *> ArgTypes;
-
-      ArgTypes.push_back(Int8PtrTy);
-      ArgTypes.push_back(Int8Ty);
-      ArgTypes.push_back(Int8Ty);
-      ArgTypes.push_back(Int8Ty);
-      ArgTypes.push_back(Int8Ty);
-      ArgTypes.push_back(Int32Ty);
+      std::vector<Type *> ArgTypes {Int8PtrTy, Int8Ty, Int8Ty, Int8Ty, Int8Ty, Int32Ty};
 
       // void vfc_enter_function (char*, char, char, char, char, int, ...)
       Constant *func = M.getOrInsertFunction("vfc_enter_function", 
@@ -190,6 +274,11 @@ namespace {
 
       Function *func_exit = cast<Function>(func);
 
+      // free functions
+      Function *func_free_double = cast<Function>(M.getOrInsertFunction("free", VoidTy, DoublePtrTy));
+
+      Function *func_free_float = cast<Function>(M.getOrInsertFunction("free", VoidTy, FloatPtrTy));
+
       /********************** Function's calls instrumentation **********************/
        for (auto &F : M) {
         for (auto &B : F){
@@ -201,17 +290,20 @@ namespace {
             if (isa<CallInst>(pi)) {
               // collect metadata info //
               Function *f = cast<CallInst>(pi)->getCalledFunction();
-              MDNode *N = pi->getMetadata("dbg"); 
-              DILocation* Loc = cast<DILocation>(N);
+              // get location information on the function call
+              DILocation* Loc = cast<DILocation>(pi->getMetadata("dbg"));
+              // get line of the function call
               unsigned Line = Loc->getLine();
+              // get file of the function call
               std::string File = Loc->getFilename().str();
+              // get name of the function call
               std::string Name = f->getName().str();
 
               // Test if f is a library function //
               LibFunc libfunc;
               bool is_from_library = TLI->getLibFunc(f->getName(), libfunc);
 
-              // Test if f is instrinsic //
+              // Test if f is intrinsic //
               bool is_intrinsic = f->isIntrinsic();
 
               bool have_float, have_double;
@@ -221,8 +313,7 @@ namespace {
                                           is_from_library, 
                                           is_intrinsic, 
                                           &have_float, 
-                                          &have_double,
-                                          M);
+                                          &have_double);
 
               // If not, don't instrument the function
               if (!have_double && !have_float)
@@ -243,22 +334,12 @@ namespace {
               Constant * zero_const = ConstantInt::get(Int32Ty, 0);
 
               // Enter function arguments
-              std::vector<Value *> EnterArgs;
-              EnterArgs.push_back(FunctionID);
-              EnterArgs.push_back(isLibraryFunction);
-              EnterArgs.push_back(isInstrinsicFunction);
-              EnterArgs.push_back(haveFloat);
-              EnterArgs.push_back(haveDouble);
-              EnterArgs.push_back(zero_const);
+              std::vector<Value *> EnterArgs {FunctionID, isLibraryFunction, isInstrinsicFunction, \
+                                              haveFloat, haveDouble, zero_const};
 
               // Exit function arguments
-              std::vector<Value *> ExitArgs;
-              ExitArgs.push_back(FunctionID);
-              ExitArgs.push_back(isLibraryFunction);
-              ExitArgs.push_back(isInstrinsicFunction);
-              ExitArgs.push_back(haveFloat);
-              ExitArgs.push_back(haveDouble);
-              ExitArgs.push_back(zero_const);
+              std::vector<Value *> ExitArgs { FunctionID, isLibraryFunction, isInstrinsicFunction, \
+                                              haveFloat, haveDouble, zero_const};
 
               // Temporary function call to make loads and stores insertions easier
               CallInst * enter_call = CallInst::Create(func_enter, EnterArgs);
@@ -282,38 +363,16 @@ namespace {
                 // Get Value
                 Value *v = (*it);
 
-                // Get type
-                Type* VType;
-                Value *TypeID;
+                Type* VType = fillArgs(1, EnterArgs, v, Types2val, m);
 
-                if (v->getType() == FloatTy){
-                  VType = FloatTy;
-                  TypeID = Types2val[FLOAT];
-                }else if (v->getType() == FloatPtrTy){
-                  VType = FloatPtrTy;
-                  TypeID = Types2val[FLOAT_ARRAY];
-                }else if (v->getType() == DoubleTy){
-                  VType = DoubleTy;
-                  TypeID = Types2val[DOUBLE];
-                }else if(v->getType() == DoublePtrTy){
-                  VType = DoublePtrTy;
-                  TypeID = Types2val[DOUBLE_ARRAY];
-                }else{
+                if (VType == NULL){
                   FunctionArgs.push_back(v);
-                  continue;
+                  continue; 
                 }
 
-                EnterArgs.push_back(TypeID);
-
                 // Allocate pointer
-                Constant *size = ConstantInt::get(Int32Ty, DL.getPrefTypeAlignment(VType));
-                AllocaInst* ptr = new AllocaInst(VType, 
-                                                0, 
-                                                size, 
-                                                FunctionName + "_arg_" + std::to_string(m));
-                ptr->insertBefore(&(*(B.begin())));
+                AllocaInst *ptr = allocatePtr(B, DL, VType, FunctionName);
 
-                // Enter store and load
                 StoreInst *enter_str = new StoreInst(v, ptr);
                 enter_str->insertBefore(enter_call);
                 LoadInst *enter_load = new LoadInst(VType, ptr);
@@ -321,11 +380,16 @@ namespace {
                 EnterArgs.push_back(ptr);
                 FunctionArgs.push_back(enter_load);
 
-                m++;
+                // Free the pointer
+                if (VType == DoublePtrTy || VType == FloatPtrTy){
+                  CallInst * free_call = (VType == DoublePtrTy) ? CallInst::Create(func_free_double, enter_load) : \
+                                                                  CallInst::Create(func_free_float, enter_load);
+                  free_call->insertAfter(func_call);
+                }
               }
 
 
-              // Values modified by the instumented function
+              // Values modified by the instrumented function
               std::vector<Value *> Returns;
               Returns.push_back(func_call);
 
@@ -334,53 +398,28 @@ namespace {
                 // Get Value
                 Value *v = (*it);
 
-                // Get type
-                Type* VType;
-                Value *TypeID;
+                Type* VType = fillArgs(0, ExitArgs, v, Types2val, n);
 
-                if (v->getType() == FloatTy){
-                  VType = FloatTy;
-                  TypeID = Types2val[FLOAT];
-                }else if (v->getType() == FloatPtrTy){
-                  VType = FloatPtrTy;
-                  TypeID = Types2val[FLOAT_ARRAY];
-                }else if (v->getType() == DoubleTy){
-                  VType = DoubleTy;
-                  TypeID = Types2val[DOUBLE];
-                }else if(v->getType() == DoublePtrTy){
-                  VType = DoublePtrTy;
-                  TypeID = Types2val[DOUBLE_ARRAY];
-                }else{
+                if (VType == NULL){
                   pi->eraseFromParent();
                   continue;
                 }
 
-                ExitArgs.push_back(TypeID);
-
                 // Allocate pointer
-                Constant *size = ConstantInt::get(Int32Ty, DL.getPrefTypeAlignment(VType));
-                AllocaInst* ptr = new AllocaInst(VType, 
-                                                0, 
-                                                size, 
-                                                FunctionName + "_return_" + std::to_string(n));
-                ptr->insertBefore(&(*(B.begin())));
+                AllocaInst *ptr = allocatePtr(B, DL, VType, FunctionName);
+               
+                StoreInst *exit_str = new StoreInst(v, ptr);
+                exit_str->insertBefore(exit_call);
+                LoadInst *exit_load = new LoadInst( VType, ptr);
+                ExitArgs.push_back(ptr);
 
-                if (n != 0){
-                  StoreInst *exit_str = new StoreInst(v, ptr);
-                  exit_str->insertBefore(exit_call);
-                  LoadInst *exit_load = new LoadInst( VType, ptr);                  
-                  exit_load->insertAfter(exit_call);
-                  ExitArgs.push_back(ptr);
-                }else{
-                  StoreInst *exit_str = new StoreInst(v, ptr);
-                  exit_str->insertBefore(exit_call);
-                  LoadInst *exit_load = new LoadInst( VType, ptr);
+                if (v == func_call){
                   ReplaceInstWithInst(pi, exit_load);
-                  ExitArgs.push_back(ptr);
+                }else{                 
+                  exit_load->insertAfter(exit_call);
                 }
-
-                n++;
               }
+
 
               // Replace temporary functions calls by definitive ones
               CallInst * new_enter_call = CallInst::Create(func_enter, EnterArgs);

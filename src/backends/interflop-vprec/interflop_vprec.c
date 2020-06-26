@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <string.h>
+#include <malloc.h>
 
 
 #include "../../common/float_const.h"
@@ -749,13 +750,13 @@ void _interflop_enter_function( interflop_function_stack_t *stack,
 {
   interflop_function_info_t* function_info = stack->functions[stack->index-1];
 
-  if (!function_info->isLibraryFunction && !function_info->isIntrinsicFunction){
+  if (0 && !function_info->isLibraryFunction && !function_info->isIntrinsicFunction){
     _set_vprec_precision_binary64(function_info->binary64_precision);
     _set_vprec_range_binary64(function_info->binary64_range);
     _set_vprec_precision_binary32(function_info->binary32_precision);
     _set_vprec_range_binary32(function_info->binary32_range);
   }else if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)){
-    for (int i = 0; i < nb_args; i++){
+    for (int i = 0; i < nb_args; ){
       int type = va_arg(ap, int);
 
       if(type == DOUBLE_TYPE){
@@ -763,13 +764,62 @@ void _interflop_enter_function( interflop_function_stack_t *stack,
         *value = _vprec_round_binary64( *value, 
                                       function_info->binary64_range, 
                                       function_info->binary64_precision);
+
+        i+=2;
       }else if(type == FLOAT_TYPE){
         float *value = va_arg(ap, float*);
         *value = _vprec_round_binary32( *value, 
                                       function_info->binary32_range, 
                                       function_info->binary32_precision);
-      }else{
-        void *value = va_arg(ap, void*);
+        i+=2;
+      }if(type == DOUBLE_ARRAY_TYPE){
+        size_t size = va_arg(ap, size_t);
+        double *original = va_arg(ap, double*);
+        double **copy = va_arg(ap, double**);
+
+        if (size == 0){
+          size = malloc_usable_size(original);
+        }else{
+          size *= sizeof(double);
+        }
+
+        (*copy) = malloc(size);
+
+        memcpy((*copy), original, size);
+
+        size_t n_elements = size/sizeof(double);
+
+        for (size_t j = 0; j < n_elements; j++){
+          (*copy)[j] = _vprec_round_binary64( (*copy)[j], 
+                                          function_info->binary64_range, 
+                                          function_info->binary64_precision);
+        }
+
+        i+=4;
+      }else if(type == FLOAT_ARRAY_TYPE){
+        size_t size = va_arg(ap, size_t);
+        float *original = va_arg(ap, float*);
+        float **copy = va_arg(ap, float**);
+
+        if (size == 0){
+          size = malloc_usable_size(original);
+        }else{
+          size *= sizeof(float);
+        }
+
+        (*copy) = malloc(size);
+
+        memcpy((*copy), original, size);
+
+        size_t n_elements = size/sizeof(float);
+        
+        for (size_t j = 0; j < n_elements; j++){
+          (*copy)[j] = _vprec_round_binary32( (*copy)[j], 
+                                          function_info->binary32_range, 
+                                          function_info->binary32_precision);
+        }
+
+        i+=4;
       }
     }
   }
@@ -781,13 +831,13 @@ void _interflop_exit_function(  interflop_function_stack_t *stack,
 {
   interflop_function_info_t* function_info = stack->functions[stack->index-1];
 
-  if (!function_info->isLibraryFunction && !function_info->isIntrinsicFunction){
+  if (0 && !function_info->isLibraryFunction && !function_info->isIntrinsicFunction){
     _set_vprec_precision_binary64(function_info->binary64_precision);
     _set_vprec_range_binary64(function_info->binary64_range);
     _set_vprec_precision_binary32(function_info->binary32_precision);
     _set_vprec_range_binary32(function_info->binary32_range);
   }else if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)){
-    for (int i = 0; i < nb_args; i++){
+    for (int i = 0; i < nb_args; ){
       int type = va_arg(ap, int);
 
       if(type == DOUBLE_TYPE){
@@ -795,13 +845,42 @@ void _interflop_exit_function(  interflop_function_stack_t *stack,
         *value = _vprec_round_binary64( *value, 
                                       function_info->binary64_range, 
                                       function_info->binary64_precision);
+        i+=2;
       }else if(type == FLOAT_TYPE){
         float *value = va_arg(ap, float*);
         *value = _vprec_round_binary32( *value, 
                                       function_info->binary32_range, 
                                       function_info->binary32_precision);
-      }else{
-        void *value = va_arg(ap, void*);
+        i+=2;
+      }if(type == DOUBLE_ARRAY_TYPE){
+        size_t size = va_arg(ap, size_t);
+        double **original = va_arg(ap, double**);
+
+        if (size == 0){
+          size = malloc_usable_size((*original))/sizeof(double);
+        }
+        
+        for (size_t j = 0; j < size; j++){
+          (*original)[j] = _vprec_round_binary64( (*original)[j], 
+                                          function_info->binary64_range, 
+                                          function_info->binary64_precision);
+        }
+
+        i+=3;
+      }else if(type == FLOAT_ARRAY_TYPE){
+        size_t size = va_arg(ap, size_t);
+        float **original = va_arg(ap, float**);
+        if (size == 0){
+          size = malloc_usable_size((*original))/sizeof(float);
+        }
+
+        for (size_t j = 0; j < size; j++){
+          (*original)[j] = _vprec_round_binary32( (*original)[j], 
+                                          function_info->binary32_range, 
+                                          function_info->binary32_precision);
+        }
+
+        i+=3;
       }
     }
   }
@@ -811,7 +890,7 @@ void _interflop_exit_function(  interflop_function_stack_t *stack,
 
   interflop_function_info_t* parent_info = stack->functions[stack->index-2];
 
-  if (!parent_info->isLibraryFunction){
+  if (0 && !parent_info->isLibraryFunction){
     _set_vprec_precision_binary64(parent_info->binary64_precision);
     _set_vprec_range_binary64(parent_info->binary64_range);
     _set_vprec_precision_binary32(parent_info->binary32_precision);

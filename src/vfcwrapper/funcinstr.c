@@ -249,7 +249,7 @@ void vfc_enter_function(char* func_name,
   _vfc_push_function(function);
 
   va_list ap;
-  va_start(ap, n*2);
+  va_start(ap, n);
 
   for(int i = 0; i < loaded_backends; i++)
     backends[i].interflop_enter_function(&call_stack, n, ap);
@@ -266,7 +266,7 @@ void vfc_exit_function(char* func_name,
                         int n, ...)
 {
   va_list ap;
-  va_start(ap, n*2);
+  va_start(ap, n);
 
   for(int i = 0; i < loaded_backends; i++)
     backends[i].interflop_exit_function(&call_stack, n, ap);

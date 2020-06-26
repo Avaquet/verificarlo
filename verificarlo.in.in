@@ -135,17 +135,21 @@ def compiler_mode(sources, options, output, args):
         func = basename + '.2.ll'
         ins = basename + '.2.ll'
 
+        debug = '-g' if args.inst_func else ''
+
         # Compile to ir (fortran uses gcc+dragonegg, c uses clang)
         if is_fortran(source):
-            shell('{gcc} -c -S -g {source} {options} -fplugin={dragonegg} -fplugin-arg-dragonegg-emit-ir -o {ir}'.format(
+            shell('{gcc} -c -S {debug} {source} {options} -fplugin={dragonegg} -fplugin-arg-dragonegg-emit-ir -o {ir}'.format(
                 gcc=gcc,
+                debug=debug,
                 source=source,
                 options=options,
                 dragonegg=dragonegg,
                 ir=ir))
         else:
-            shell('{clang} -c -S -g {source} -emit-llvm {options} -o {ir}'.format(
+            shell('{clang} -c -S {debug} {source} -emit-llvm {options} -o {ir}'.format(
                 clang=clang,
+                debug=debug,
                 source=source,
                 options=options,
                 ir=ir
