@@ -2,7 +2,7 @@ SEED=5929
 
 export VFC_BACKENDS_SILENT_LOAD="True"
 
-verificarlo test_float.c -o test_float
+verificarlo-c test_float.c -o test_float
 
 rm -f output.txt
 
@@ -11,7 +11,7 @@ for i in `seq 0 23`; do
   ./test_float $i >> output.txt 2>&1 
 done
 
-verificarlo test_double.c -o test_double 
+verificarlo-c test_double.c -o test_double 
 
 for i in `seq 0 52`; do
 	export VFC_BACKENDS="libinterflop_cancellation.so --tolerance $i --seed=$SEED --warning=WARNING"
