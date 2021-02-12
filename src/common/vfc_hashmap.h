@@ -20,6 +20,8 @@
 
 #define __VFC_HASHMAP_HEADER__
 
+#include <stddef.h>
+
 struct vfc_hashmap_st {
   size_t nbits;
   size_t mask;

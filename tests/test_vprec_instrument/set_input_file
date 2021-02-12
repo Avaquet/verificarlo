@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+import xml.etree.ElementTree as etree
 import sys
 import os
-
 
 if len(sys.argv) < 6:
 	print("./set_input_file [input file name] [precision mantissa double]\
@@ -27,6 +27,43 @@ if not os.path.exists(InputFileName):
    	print("Input file not found")
    	exit(0)
 
+tree = etree.parse(InputFileName)
+
+for function in tree.iter("function"):
+    
+    CurrentFunction = function[0].text.split(sep="/")[1] + "/" + function[0].text.split(sep="/")[2]
+
+    if CurrentFunction in FunctionsList:
+        function[5].text = str(PrecDouble[0])
+        function[6].text = str(RangeDouble[0])
+        function[7].text = str(PrecFloat[0])
+        function[8].text = str(RangeFloat[0])
+
+        for arg in function.iter("input"):
+            if arg[1].text == '0':
+                arg[2].text = str(PrecFloat[0])
+                arg[3].text = str(RangeFloat[0])
+            elif arg[1].text == '1':
+                arg[2].text = str(PrecDouble[0])
+                arg[3].text = str(RangeDouble[0])
+            else:
+                print("Unknow Argument type")
+                exit(0)
+    
+        for arg in function.iter("output"):
+            if arg[1].text == '0':
+                arg[2].text = str(PrecFloat[0])
+                arg[3].text = str(RangeFloat[0])
+            elif arg[1].text == '1':
+                arg[2].text = str(PrecDouble[0])
+                arg[3].text = str(RangeDouble[0])
+            else:
+                print("Unknow Argument type")
+                exit(0)
+
+tree.write(InputFileName)
+
+'''
 f = open(InputFileName, 'r')
 
 Lines = f.readlines()
@@ -74,3 +111,4 @@ f = open(InputFileName, 'w')
 f.write(ToWrite)
 
 f.close()
+'''

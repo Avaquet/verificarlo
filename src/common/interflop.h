@@ -1,3 +1,8 @@
+#ifndef __INTERFLOP_H__
+#define __INTERFLOP_H__
+
+#include "stdarg.h"
+
 /* interflop backend interface */
 
 /* interflop float compare predicates, follows the same order than
@@ -86,3 +91,5 @@ struct interflop_backend_interface_t {
 
 struct interflop_backend_interface_t interflop_init(int argc, char **argv,
                                                     void **context);
+
+#endif
