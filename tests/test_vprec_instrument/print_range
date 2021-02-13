@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import xml.etree.ElementTree as etree
 import sys
 import os
 
@@ -17,26 +18,20 @@ if not os.path.exists(InputFileName):
    	print("Input file not found")
    	exit(0)
 
-f = open(InputFileName, 'r')
 
-Lines = f.readlines()
 
-CurrentFunction = ""
-FullFunction = ""
+tree = etree.parse(InputFileName)
 
-for Line in Lines:
-	Fields = Line.split()
+for function in tree.iter("function"):
+    
+    CurrentFunction = function[0].text.split(sep="/")[1] + "/" + function[0].text.split(sep="/")[2]
 
-	if len(Fields) == 12:
-		CurrentFunction = Fields[0].split(sep="/")[1] + "/" + Fields[0].split(sep="/")[2]
-		FullFunction = Fields[0]
+    if CurrentFunction in FunctionsList:
 
-	elif len(Fields) == 7:
-		if CurrentFunction in FunctionsList:
-			print(Fields[0], FullFunction, Fields[5], Fields[6])
+        for arg in function.iter("input"):
+            print("input:", function[0].text, arg[4].text, arg[5].text)
+    
+        for arg in function.iter("output"):
+            print("output:", function[0].text, arg[4].text, arg[5].text)
 
-	elif len(Fields) != 0:
-		print("Wrong input file structure")
-		exit(0)
-
-f.close()
+tree.write(InputFileName)

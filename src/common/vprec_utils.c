@@ -30,120 +30,191 @@
 //
 
 #include "vprec_utils.h"
+#include <libxml/parser.h>
+#include <libxml/xmlwriter.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-void _vprec_write_hasmap(FILE *fout) {
-  fprintf(fout, "<vprec_execution_profile>\n");
+#define BUFFER_SIZE 256
+#define N_FUNCTION_DATA 12
+
+static char buffer[BUFFER_SIZE];
+
+static char *int_to_string(int value) {
+  sprintf(buffer, "%d", value);
+
+  return buffer;
+}
+
+static char *short_to_string(short value) {
+  sprintf(buffer, "%hd", value);
+
+  return buffer;
+}
+
+void _vprec_write_hasmap(const char *filename) {
+  // build the xml writer
+  xmlTextWriterPtr writer = xmlNewTextWriterFilename(filename, 0);
+  // start the xml document
+  xmlTextWriterStartDocument(writer, NULL, "UTF-8", NULL);
+
+  // start vprec_execution_profile
+  xmlTextWriterStartElement(writer, "vprec_execution_profile");
+
   for (int ii = 0; ii < _vprec_func_map->capacity; ii++) {
     if (get_value_at(_vprec_func_map->items, ii) != 0 &&
         get_value_at(_vprec_func_map->items, ii) != 0) {
       _vprec_inst_function_t *function =
           (_vprec_inst_function_t *)get_value_at(_vprec_func_map->items, ii);
-      fprintf(fout, "\t<function>\n");
 
-      fprintf(fout, "\t\t<id>%s</id>\n", function->std_info->id);
-      fprintf(fout, "\t\t<is_lib>%hd</is_lib>\n", function->std_info->isLibraryFunction);
-      fprintf(fout, "\t\t<is_intr>%hd</is_intr>\n", function->std_info->isIntrinsicFunction);
-      fprintf(fout, "\t\t<use_float>%hd</use_float>\n", function->std_info->useFloat);
-      fprintf(fout, "\t\t<use_double>%hd</use_double>\n", function->std_info->useDouble); 
-      fprintf(fout, "\t\t<prec64>%d</prec64>\n", function->OpsPrec64);
-      fprintf(fout, "\t\t<range64>%d</range64>\n", function->OpsRange64);
-      fprintf(fout, "\t\t<prec32>%d</prec32>\n", function->OpsPrec32);
-      fprintf(fout, "\t\t<range32>%d</range32>\n", function->OpsRange32);
-      fprintf(fout, "\t\t<nb_input_args>%d</nb_input_args>\n", function->nb_input_args);
-      fprintf(fout, "\t\t<nb_output_args>%d</nb_output_args>\n", function->nb_output_args);
-      fprintf(fout, "\t\t<nb_calls>%d</nb_calls>\n", function->n_calls);
+      // start function
+      xmlTextWriterStartElement(writer, "function");
 
-      /*
-      fprintf(fout, "%s\t%hd\t%hd\t%hd\t%hd\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-              function->std_info->id, function->std_info->isLibraryFunction,
-              function->std_info->isIntrinsicFunction, function->std_info->useFloat,
-              function->std_info->useDouble, function->OpsPrec64, function->OpsRange64,
-              function->OpsPrec32, function->OpsRange32,
-              function->nb_input_args, function->nb_output_args,
-              function->n_calls);
-      */
-      
+      xmlTextWriterWriteElement(writer, "id", function->std_info->id);
+      xmlTextWriterWriteElement(
+          writer, "is_lib",
+          short_to_string(function->std_info->isLibraryFunction));
+      xmlTextWriterWriteElement(
+          writer, "is_intr",
+          short_to_string(function->std_info->isIntrinsicFunction));
+      xmlTextWriterWriteElement(writer, "use_float",
+                                short_to_string(function->std_info->useFloat));
+      xmlTextWriterWriteElement(writer, "use_double",
+                                short_to_string(function->std_info->useDouble));
+      xmlTextWriterWriteElement(writer, "prec64",
+                                int_to_string(function->OpsPrec64));
+      xmlTextWriterWriteElement(writer, "range64",
+                                int_to_string(function->OpsRange64));
+      xmlTextWriterWriteElement(writer, "prec32",
+                                int_to_string(function->OpsPrec32));
+      xmlTextWriterWriteElement(writer, "range32",
+                                int_to_string(function->OpsRange32));
+      xmlTextWriterWriteElement(writer, "nb_input_args",
+                                int_to_string(function->nb_input_args));
+      xmlTextWriterWriteElement(writer, "nb_output_args",
+                                int_to_string(function->nb_output_args));
+      xmlTextWriterWriteElement(writer, "nb_calls",
+                                int_to_string(function->n_calls));
+
       for (int i = 0; i < function->nb_input_args; i++) {
-        fprintf(fout, "\t\t<input>\n");  
+        // start input
+        xmlTextWriterStartElement(writer, "input");
 
-        fprintf(fout, "\t\t\t<arg_id>%s</arg_id>\n", function->input_args[i].arg_id);
-        fprintf(fout, "\t\t\t<data_type>%hd</data_type>\n", function->input_args[i].data_type);
-        fprintf(fout, "\t\t\t<mantissa_length>%d</mantissa_length>\n", function->input_args[i].mantissa_length);
-        fprintf(fout, "\t\t\t<exponent_length>%d</exponent_length>\n", function->input_args[i].exponent_length);
-        fprintf(fout, "\t\t\t<min_range>%d</min_range>\n", function->input_args[i].min_range);
-        fprintf(fout, "\t\t\t<max_range>%d</max_range>\n", function->input_args[i].max_range);
-         
-       /* 
-        fprintf(fout, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                function->input_args[i].arg_id,
-                function->input_args[i].data_type,
-                function->input_args[i].mantissa_length,
-                function->input_args[i].exponent_length,
-                function->input_args[i].min_range,
-                function->input_args[i].max_range); 
-        */
+        xmlTextWriterWriteElement(writer, "arg_id",
+                                  function->input_args[i].arg_id);
+        xmlTextWriterWriteElement(
+            writer, "data_type",
+            short_to_string(function->input_args[i].data_type));
+        xmlTextWriterWriteElement(
+            writer, "mantissa_length",
+            int_to_string(function->input_args[i].mantissa_length));
+        xmlTextWriterWriteElement(
+            writer, "exponent_length",
+            int_to_string(function->input_args[i].exponent_length));
+        xmlTextWriterWriteElement(
+            writer, "min_range",
+            int_to_string(function->input_args[i].min_range));
+        xmlTextWriterWriteElement(
+            writer, "max_range",
+            int_to_string(function->input_args[i].max_range));
 
-        fprintf(fout, "\t\t</input>\n");  
+        // end input
+        xmlTextWriterEndElement(writer);
       }
       for (int i = 0; i < function->nb_output_args; i++) {
-        fprintf(fout, "\t\t<output>\n");  
-       
-        fprintf(fout, "\t\t\t<arg_id>%s</arg_id>\n", function->output_args[i].arg_id);
-        fprintf(fout, "\t\t\t<data_type>%hd</data_type>\n", function->output_args[i].data_type);
-        fprintf(fout, "\t\t\t<mantissa_length>%d</mantissa_length>\n", function->output_args[i].mantissa_length);
-        fprintf(fout, "\t\t\t<exponent_length>%d</exponent_length>\n", function->output_args[i].exponent_length);
-        fprintf(fout, "\t\t\t<min_range>%d</min_range>\n", function->output_args[i].min_range);
-        fprintf(fout, "\t\t\t<max_range>%d</max_range>\n", function->output_args[i].max_range);
-         
-        /*
-        fprintf(fout, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                function->output_args[i].arg_id,
-                function->output_args[i].data_type,
-                function->output_args[i].mantissa_length,
-                function->output_args[i].exponent_length,
-                function->output_args[i].min_range,
-                function->output_args[i].max_range);
-        */
-        
-        fprintf(fout, "\t\t</output>\n");  
+        // start input
+        xmlTextWriterStartElement(writer, "output");
+
+        xmlTextWriterWriteElement(writer, "arg_id",
+                                  function->output_args[i].arg_id);
+        xmlTextWriterWriteElement(
+            writer, "data_type",
+            short_to_string(function->output_args[i].data_type));
+        xmlTextWriterWriteElement(
+            writer, "mantissa_length",
+            int_to_string(function->output_args[i].mantissa_length));
+        xmlTextWriterWriteElement(
+            writer, "exponent_length",
+            int_to_string(function->output_args[i].exponent_length));
+        xmlTextWriterWriteElement(
+            writer, "min_range",
+            int_to_string(function->output_args[i].min_range));
+        xmlTextWriterWriteElement(
+            writer, "max_range",
+            int_to_string(function->output_args[i].max_range));
+
+        // end output
+        xmlTextWriterEndElement(writer);
       }
-      fprintf(fout, "\t</function>\n");
+
+      // end function
+      xmlTextWriterEndElement(writer);
     }
-  } 
-  fprintf(fout, "</vprec_execution_profile>\n");
+  }
+
+  // end vprec_execution_profile
+  xmlTextWriterEndElement(writer);
+
+  // end the xml document
+  xmlTextWriterEndDocument(writer);
+  // free the xml writer
+  xmlFreeTextWriter(writer);
+}
+
+static xmlNode *get_node(xmlNode *node, int offset) {
+  for (int i = 0; i < offset; i++) {
+    node = node->next;
+  }
+
+  return node;
+}
+
+static char *get_string(xmlNode *node, int offset) {
+  for (int i = 0; i < offset; i++) {
+    node = node->next;
+  }
+
+  return xmlNodeGetContent(node);
+}
+
+static int get_int(xmlNode *node, int offset) {
+  for (int i = 0; i < offset; i++) {
+    node = node->next;
+  }
+
+  return atoi(xmlNodeGetContent(node));
 }
 
 // Read and initialize the hashmap from the given file
-void _vprec_read_hasmap(FILE *fin) {
+void _vprec_read_hasmap(const char *filename) {
+  // build the document
+  xmlDoc *doc = xmlReadFile(filename, NULL, 0);
+  // get the root element
+  xmlNode *root = xmlDocGetRootElement(doc);
+
+  // allocate space for the function structure
   _vprec_inst_function_t function;
   function.std_info = malloc(sizeof(interflop_function_info_t));
-  
-  int binary64_precision, binary64_range, binary32_precision, binary32_range,
-      type;
-  fscanf(fin, "<vprec_execution_profile>\n");
-  
-  while(1){
-    fscanf(fin, "\t<function>\n");
-    function.std_info->id = malloc(sizeof(char)*256);
-    if(fscanf(fin, "<id>%s</id>\n", function.std_info->id)){
-      fprintf(stderr, "id = %s\n", function.std_info->id);
-    }else{
-      break;
-    }
-    fscanf(fin, "\t\t<is_lib>%hd</is_lib>\n", &function.std_info->isLibraryFunction);
-    fscanf(fin, "\t\t<is_intr>%hd</is_intr>\n", &function.std_info->isIntrinsicFunction);
-    fscanf(fin, "\t\t<use_float>%hd</use_float>\n", &function.std_info->useFloat);
-    fscanf(fin, "\t\t<use_double>%hd</use_double>\n", &function.std_info->useDouble); 
-    fscanf(fin, "\t\t<prec64>%d</prec64>\n", &function.OpsPrec64);
-    fscanf(fin, "\t\t<range64>%d</range64>\n", &function.OpsRange64);
-    fscanf(fin, "\t\t<prec32>%d</prec32>\n", &function.OpsPrec32);
-    fscanf(fin, "\t\t<range32>%d</range32>\n", &function.OpsRange32);
-    fscanf(fin, "\t\t<nb_input_args>%d</nb_input_args>\n", &function.nb_input_args);
-    fscanf(fin, "\t\t<nb_output_args>%d</nb_output_args>\n", &function.nb_output_args);
-    fscanf(fin, "\t\t<nb_calls>%d</nb_calls>\n", &function.n_calls);
+
+  // iterate over functions
+  xmlNode *node_function = root->children;
+  while (node_function) {
+    // allocate space for the id
+    function.std_info->id = malloc(sizeof(char) * BUFFER_SIZE);
+    strcpy(function.std_info->id, get_string(node_function->children, 0));
+    function.std_info->isLibraryFunction = get_int(node_function->children, 1);
+    function.std_info->isIntrinsicFunction =
+        get_int(node_function->children, 2);
+    function.std_info->useFloat = get_int(node_function->children, 3);
+    function.std_info->useDouble = get_int(node_function->children, 4);
+    function.OpsPrec64 = get_int(node_function->children, 5);
+    function.OpsRange64 = get_int(node_function->children, 6);
+    function.OpsPrec32 = get_int(node_function->children, 7);
+    function.OpsRange32 = get_int(node_function->children, 8);
+    function.nb_input_args = get_int(node_function->children, 9);
+    function.nb_output_args = get_int(node_function->children, 10);
+    function.n_calls = get_int(node_function->children, 11);
 
     // allocate space for input arguments
     function.input_args =
@@ -151,93 +222,44 @@ void _vprec_read_hasmap(FILE *fin) {
     // allocate space for output arguments
     function.output_args =
         malloc(function.nb_output_args * sizeof(_vprec_argument_data_t));
-  
-    // get input arguments precision
-    for (int i = 0; i < function.nb_input_args; i++) { 
-      fscanf(fin, "\t\t<input>\n");  
 
-      fscanf(fin, "\t\t\t<arg_id>%s</arg_id>\n", function.input_args[i].arg_id);
-      fscanf(fin, "\t\t\t<data_type>%hd</data_type>\n", &function.input_args[i].data_type);
-      fscanf(fin, "\t\t\t<mantissa_length>%d</mantissa_length>\n", &function.input_args[i].mantissa_length);
-      fscanf(fin, "\t\t\t<exponent_length>%d</exponent_length>\n", &function.input_args[i].exponent_length);
-      fscanf(fin, "\t\t\t<min_range>%d</min_range>\n", &function.input_args[i].min_range);
-      fscanf(fin, "\t\t\t<max_range>%d</max_range>\n", &function.input_args[i].max_range);
-       
-      fscanf(fin, "\t\t</input>\n");  
-    }
-
-    // get output arguments precision
-    for (int i = 0; i < function.nb_output_args; i++) {
-      fscanf(fin, "\t\t<output>\n");  
-      
-      fscanf(fin, "\t\t\t<arg_id>%s</arg_id>\n", function.output_args[i].arg_id);
-      fscanf(fin, "\t\t\t<data_type>%hd</data_type>\n", &function.output_args[i].data_type);
-      fscanf(fin, "\t\t\t<mantissa_length>%d</mantissa_length>\n", &function.output_args[i].mantissa_length);
-      fscanf(fin, "\t\t\t<exponent_length>%d</exponent_length>\n", &function.output_args[i].exponent_length);
-      fscanf(fin, "\t\t\t<min_range>%d</min_range>\n", &function.output_args[i].min_range);
-      fscanf(fin, "\t\t\t<max_range>%d</max_range>\n", &function.output_args[i].max_range);
-     
-      fscanf(fin, "\t\t</output>\n");  
-    }
-    
-    // insert in the hashmap
-    _vprec_inst_function_t *address = malloc(sizeof(_vprec_inst_function_t));
-    (*address) = function;
-    vfc_hashmap_insert(_vprec_func_map, vfc_hashmap_str_function(function.std_info->id),
-                       address);
-    
-    fscanf(fin, "\t</function>\n");
-  }
-
-  fscanf(fin, "</vprec_execution_profile>\n");
- 
-  /*
-  while (fscanf(fin, "%s\t%hd\t%hd\t%hd\t%hd\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-                function.std_info->id, &function.std_info->isLibraryFunction,
-                &function.std_info->isIntrinsicFunction, &function.std_info->useFloat,
-                &function.std_info->useDouble, &function.OpsPrec64, &function.OpsRange64,
-                &function.OpsPrec32, &function.OpsRange32,
-                &function.nb_input_args, &function.nb_output_args,
-                &function.n_calls) == 12) {
-    // allocate space for input arguments
-    function.input_args =
-        malloc(function.nb_input_args * sizeof(_vprec_argument_data_t));
-    // allocate space for output arguments
-    function.output_args =
-        malloc(function.nb_output_args * sizeof(_vprec_argument_data_t));
-
-    // get input arguments precision
+    // iterate over input args
     for (int i = 0; i < function.nb_input_args; i++) {
-      if (!fscanf(fin, "input:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                  function.input_args[i].arg_id,
-                  &function.input_args[i].data_type,
-                  &function.input_args[i].mantissa_length,
-                  &function.input_args[i].exponent_length,
-                  &function.input_args[i].min_range,
-                  &function.input_args[i].max_range)) {
-        logger_error("Can't read input arguments of %s\n", function.std_info->id);
-      }
+      xmlNode *arg = get_node(node_function->children, N_FUNCTION_DATA + i);
+
+      strcpy(function.input_args[i].arg_id, get_string(arg->children, 0));
+      function.input_args[i].data_type = get_int(arg->children, 1);
+      function.input_args[i].mantissa_length = get_int(arg->children, 2);
+      function.input_args[i].exponent_length = get_int(arg->children, 3);
+      function.input_args[i].min_range = get_int(arg->children, 4);
+      function.input_args[i].max_range = get_int(arg->children, 5);
     }
 
-    // get output arguments precision
+    // iterate over output args
     for (int i = 0; i < function.nb_output_args; i++) {
-      if (!fscanf(fin, "output:\t%s\t%hd\t%d\t%d\t%d\t%d\n",
-                  function.output_args[i].arg_id,
-                  &function.output_args[i].data_type,
-                  &function.output_args[i].mantissa_length,
-                  &function.output_args[i].exponent_length,
-                  &function.output_args[i].min_range,
-                  &function.output_args[i].max_range)) {
-        logger_error("Can't read output arguments of %s\n", function.std_info->id);
-      }
+      xmlNode *arg = get_node(node_function->children,
+                              N_FUNCTION_DATA + function.nb_input_args + i);
+
+      strcpy(function.output_args[i].arg_id, get_string(arg->children, 0));
+      function.output_args[i].data_type = get_int(arg->children, 1);
+      function.output_args[i].mantissa_length = get_int(arg->children, 2);
+      function.output_args[i].exponent_length = get_int(arg->children, 3);
+      function.output_args[i].min_range = get_int(arg->children, 4);
+      function.output_args[i].max_range = get_int(arg->children, 5);
     }
 
     // insert in the hashmap
     _vprec_inst_function_t *address = malloc(sizeof(_vprec_inst_function_t));
     (*address) = function;
-    vfc_hashmap_insert(_vprec_func_map, vfc_hashmap_str_function(function.std_info->id),
+    vfc_hashmap_insert(_vprec_func_map,
+                       vfc_hashmap_str_function(function.std_info->id),
                        address);
-  }
-  */
-}
 
+    node_function = node_function->next;
+  }
+
+  // free the document
+  xmlFreeDoc(doc);
+  // free the parser
+  xmlCleanupParser();
+}

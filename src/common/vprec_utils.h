@@ -35,8 +35,8 @@
 #include <stdio.h>
 
 #include "interflop.h"
-#include "vfc_hashmap.h"
 #include "logger.h"
+#include "vfc_hashmap.h"
 
 // Hashmap for functions metadata
 vfc_hashmap_t _vprec_func_map;
@@ -91,12 +91,10 @@ typedef struct _vprec_inst_function {
     }                                                                          \
   })
 
-
 // Write the hashmap in the given file
-void _vprec_write_hasmap(FILE *fout);
-
+void _vprec_write_hasmap(const char *filename);
 
 // Read and initialize the hashmap from the given file
-void _vprec_read_hasmap(FILE *fin);
+void _vprec_read_hasmap(const char *filename);
 
 #endif

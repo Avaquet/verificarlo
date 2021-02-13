@@ -194,12 +194,12 @@ void _set_vprec_mode(vprec_mode mode) {
 void _set_vprec_precision_binary32(int precision) {
   if (precision < VPREC_PRECISION_BINARY32_MIN) {
     logger_error("invalid precision provided for binary32."
-                 "Must be greater than %d",
-                 VPREC_PRECISION_BINARY32_MIN);
+                 "Must be greater than (%d) and is %d",
+                 VPREC_PRECISION_BINARY32_MIN, precision);
   } else if (VPREC_PRECISION_BINARY32_MAX < precision) {
-    logger_error("invalid precision provided, "
-                 "must be lower than (%d)",
-                 VPREC_RANGE_BINARY32_MAX);
+    logger_error("invalid precision provided for binary32. "
+                 "Must be lower than (%d) and is %d",
+                 VPREC_PRECISION_BINARY32_MAX, precision);
   } else {
     VPRECLIB_BINARY32_PRECISION = precision;
   }
@@ -208,12 +208,12 @@ void _set_vprec_precision_binary32(int precision) {
 void _set_vprec_range_binary32(int range) {
   if (range < VPREC_RANGE_BINARY32_MIN) {
     logger_error("invalid range provided for binary32."
-                 "Must be greater than %d",
-                 VPREC_RANGE_BINARY32_MIN);
+                 "Must be greater than (%d) and is %d",
+                 VPREC_RANGE_BINARY32_MIN, range);
   } else if (VPREC_RANGE_BINARY32_MAX < range) {
-    logger_error("invalid range provided, "
-                 "must be lower than (%d)",
-                 VPREC_RANGE_BINARY32_MAX);
+    logger_error("invalid range provided for binary32."
+                 "Must be lower than (%d) and is %d",
+                 VPREC_RANGE_BINARY32_MAX, range);
   } else {
     VPRECLIB_BINARY32_RANGE = range;
   }
@@ -222,12 +222,12 @@ void _set_vprec_range_binary32(int range) {
 void _set_vprec_precision_binary64(int precision) {
   if (precision < VPREC_PRECISION_BINARY64_MIN) {
     logger_error("invalid precision provided for binary64."
-                 "Must be greater than %d",
+                 "Must be greater than (%d) and is %d",
                  VPREC_PRECISION_BINARY64_MIN);
   } else if (VPREC_PRECISION_BINARY64_MAX < precision) {
-    logger_error("invalid precision provided, "
-                 "must be lower than (%d)",
-                 VPREC_RANGE_BINARY64_MAX);
+    logger_error("invalid precision provided for binary64."
+                 "Must be lower than (%d) and is %d",
+                 VPREC_PRECISION_BINARY64_MAX, precision);
   } else {
     VPRECLIB_BINARY64_PRECISION = precision;
   }
@@ -236,12 +236,12 @@ void _set_vprec_precision_binary64(int precision) {
 void _set_vprec_range_binary64(int range) {
   if (range < VPREC_RANGE_BINARY64_MIN) {
     logger_error("invalid range provided for binary64."
-                 "Must be greater than %d",
-                 VPREC_RANGE_BINARY64_MIN);
+                 "Must be greater than (%d) and is %d",
+                 VPREC_RANGE_BINARY64_MIN, range);
   } else if (VPREC_RANGE_BINARY64_MAX < range) {
-    logger_error("invalid range provided, "
-                 "must be lower than (%d)",
-                 VPREC_RANGE_BINARY64_MAX);
+    logger_error("invalid range provided for binary64."
+                 "Must be lower than (%d) and is %d",
+                 VPREC_RANGE_BINARY64_MAX, range);
   } else {
     VPRECLIB_BINARY64_RANGE = range;
   }
@@ -622,7 +622,7 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
     function_inst = malloc(sizeof(_vprec_inst_function_t));
 
     // initialize the structure
-    function_inst->std_info = function_info; 
+    function_inst->std_info = function_info;
     function_inst->OpsRange64 = VPREC_RANGE_BINARY64_DEFAULT;
     function_inst->OpsPrec64 = VPREC_PRECISION_BINARY64_DEFAULT;
     function_inst->OpsRange32 = VPREC_RANGE_BINARY32_DEFAULT;
@@ -1334,7 +1334,7 @@ void _interflop_finalize(void *context) {
   if (vprec_output_file != NULL) {
     FILE *f = fopen(vprec_output_file, "w");
     if (f != NULL) {
-      _vprec_write_hasmap(f);
+      _vprec_write_hasmap(vprec_output_file);
       fclose(f);
     } else {
       logger_error("Output file can't be written");
@@ -1382,7 +1382,7 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
   if (vprec_input_file != NULL) {
     FILE *f = fopen(vprec_input_file, "r");
     if (f != NULL) {
-      _vprec_read_hasmap(f);
+      _vprec_read_hasmap(vprec_input_file);
       fclose(f);
     } else {
       logger_error("Input file can't be found");
