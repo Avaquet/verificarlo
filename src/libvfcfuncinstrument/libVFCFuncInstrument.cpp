@@ -20,27 +20,10 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "../../config.h"
-#include "llvm/Analysis/CallGraphSCCPass.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/DebugLoc.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/Mangler.h"
-#include "llvm/IR/Metadata.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
+#include "libVFCFuncInstrument.hpp"
 
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/xml_parser.hpp>
 #include <cxxabi.h>
 #include <fstream>
 #include <iostream>
@@ -50,35 +33,40 @@
 #include <utility>
 #include <vector>
 
+
 using namespace llvm;
+namespace pt = boost::property_tree;
 
 namespace {
 
-static Function *func_enter;
-static Function *func_exit;
+// Fill use_double and use_float with true if the instruction ii use at least
+// of the managed types
+bool haveFloatingPointArithmetic(Instruction &ii, bool* use_float, bool* use_double)
+{
+  for (size_t i = 0; i < ii.getNumOperands(); i++) {
+    Type *opType = ii.getOperand(i)->getType();
 
-// Enumeration of managed types
-enum Ftypes { FLOAT, DOUBLE, FLOAT_PTR, DOUBLE_PTR };
+    if (opType->isVectorTy()) {
+      VectorType *t = static_cast<VectorType *>(opType);
+      opType = t->getElementType();
+    }
 
-// Types
-llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy, *Int8Ty, *Int8PtrTy,
-    *Int32Ty;
+    if (opType == FloatTy)
+      (*use_float) = true;
 
-// Array of values
-Value *Types2val[] = {NULL, NULL, NULL, NULL};
+    if (opType == DoubleTy)
+      (*use_double) = true;
+  }
+
+  return (use_float || use_double);
+}
 
 // Fill use_double and use_float with true if the call_inst pi use at least
 // of the managed types
-void haveFloatingPointArithmetic(Instruction *call, Function *f,
-                                 bool is_from_library, bool is_intrinsic,
-                                 bool *use_float, bool *use_double, Module &M) {
-  Type *ReturnTy;
-
-  if (f) {
-    ReturnTy = f->getReturnType();
-  } else {
-    ReturnTy = call->getType();
-  }
+bool haveFloatingPointArithmetic(Instruction *I, Function *f,
+                                 bool *use_float, bool *use_double) {
+  // get the return type
+  Type *ReturnTy = (f) ? f->getReturnType(): I->getType();
 
   // Test if return type of call is float
   (*use_float) = ReturnTy == FloatTy;
@@ -92,32 +80,40 @@ void haveFloatingPointArithmetic(Instruction *call, Function *f,
     // use float or double
     for (auto &bbi : (*f)) {
       for (auto &ii : bbi) {
-        for (size_t i = 0; i < ii.getNumOperands(); i++) {
-          Type *opType = ii.getOperand(i)->getType();
-
-          if (opType->isVectorTy()) {
-            VectorType *t = static_cast<VectorType *>(opType);
-            opType = t->getElementType();
-          }
-
-          if (opType == FloatTy)
-            (*use_float) = true;
-
-          if (opType == DoubleTy)
-            (*use_double) = true;
-        }
+        haveFloatingPointArithmetic(ii, use_float, use_double);
       }
     }
-  } else if (call != NULL) {
+  }else if (I != NULL) {
     // Loop over arguments types
-    for (auto it = call->op_begin(); it < call->op_end() - 1; it++) {
+    for (auto it = I->op_begin(); it < I->op_end() - 1; it++) {
       if ((*it)->getType() == FloatTy || (*it)->getType() == FloatPtrTy)
         (*use_float) = true;
       if ((*it)->getType() == DoubleTy || (*it)->getType() == DoublePtrTy)
         (*use_double) = true;
     }
+    
+    CallInst *Call = cast<CallInst>(I);
   }
+
+  return use_double || use_float;
 }
+
+// return the vector size
+unsigned isVectorized(Instruction &I)
+{
+  for (size_t i = 0; i < I.getNumOperands(); i++) {
+    Type *opType = I.getOperand(i)->getType();
+
+    if (opType->isVectorTy()) {
+      VectorType *t = static_cast<VectorType *>(opType);
+      return t->getNumElements();
+    }
+  }
+
+  return 1;
+}
+
+
 
 // Search the size of the Value V which is a pointer
 unsigned int getSizeOf(Value *V, const Function *F) {
@@ -164,16 +160,12 @@ std::string getArgName(Function *F, Value *V, unsigned int i) {
     for (auto &I : BB) {
       if (isa<CallInst>(&I)) {
         CallInst *Call = cast<CallInst>(&I);
+        
+        DILocalVariable *Var = cast<DILocalVariable>(
+            cast<MetadataAsValue>(I.getOperand(1))->getMetadata());
 
-        if (Call->getCalledFunction()->getName() == "llvm.dbg.declare" ||
-            Call->getCalledFunction()->getName() == "llvm.dbg.value" ||
-            Call->getCalledFunction()->getName() == "llvm.dbg.addr") {
-          DILocalVariable *Var = cast<DILocalVariable>(
-              cast<MetadataAsValue>(I.getOperand(1))->getMetadata());
-
-          if (Var->isParameter() && (Var->getArg() == i + 1)) {
-            return Var->getName().str();
-          }
+        if (Var->isParameter() && (Var->getArg() == i + 1)) {
+          return Var->getName().str();
         }
       }
     }
@@ -371,6 +363,148 @@ void InstrumentFunction(std::vector<Value *> MetaData,
   }
 }
 
+std::string getSourceFileNameAbsPath(Module &M) {
+  std::string filename = M.getSourceFileName();
+  if (sys::path::is_absolute(filename))
+    return filename;
+
+  SmallString<4096> path;
+  sys::fs::current_path(path);
+  path.append("/" + filename);
+  if (not sys::fs::make_absolute(path)) {
+    return path.str().str();
+  } else {
+    return "";
+  }
+}
+
+Fops getFops(Instruction &I) {
+  switch (I.getOpcode()) {
+  case Instruction::FAdd:
+    return FOP_ADD;
+  case Instruction::FSub:
+    // In LLVM IR the FSub instruction is used to represent FNeg
+    return FOP_SUB;
+  case Instruction::FMul:
+    return FOP_MUL;
+  case Instruction::FDiv:
+    return FOP_DIV;
+  case Instruction::FCmp:
+    return FOP_CMP;
+  default:
+    return FOP_IGNORE;
+  }
+}
+
+const TargetLibraryInfo &getTLI(Function *f) {
+  TargetLibraryInfoWrapperPass TLIWP;
+
+#if LLVM_VERSION_MAJOR >= 10
+  return TLIWP.getTLI(*f);
+#else
+  return TLIWP.getTLI();
+#endif
+}
+
+void add_function_metadata(pt::ptree &function, Function &F, Module &M)
+{
+  unsigned func_line, func_column;
+  MDNode *func_md = F.getMetadata("dbg");
+
+  if (func_md) {
+    DebugLoc Loc = DebugLoc(func_md);
+    func_column = Loc.getCol();
+    func_line = Loc.getLine();
+  }
+
+  function.add("filepath", getSourceFileNameAbsPath(M));
+  function.add("name", F.getName().str());
+  function.add("line", func_line);
+  function.add("column", func_column);
+}
+
+void add_loop_metadata(pt::ptree &loop, Loop *L, Module &M)
+{
+  static unsigned cpt = 0;
+
+  DebugLoc loop_loc = L->getStartLoc();
+  unsigned loop_line = loop_loc.getLine();
+  unsigned loop_column = loop_loc.getCol();
+
+  loop.add("filepath", getSourceFileNameAbsPath(M));
+  loop.add("name", "Loop_" + std::to_string(cpt++));
+  loop.add("line", loop_line);
+  loop.add("column", loop_column);
+}
+
+std::string Fops2str[] = {"add", "sub", "mul", "div", "cmp", "ignore"};
+
+void add_fops_metadata(pt::ptree &fops, Fops type, Instruction &I, Module &M)
+{
+  unsigned fops_line, fops_column;
+  DebugLoc fops_loc = I.getDebugLoc();
+  
+  fops_column = fops_loc.getCol();
+  fops_line = fops_loc.getLine();
+
+  fops.add("filepath", getSourceFileNameAbsPath(M));
+  fops.add("type", Fops2str[type]);
+  fops.add("line", fops_line);
+  fops.add("column", fops_column);
+
+  bool use_float = false, use_double = false;
+
+  haveFloatingPointArithmetic(I, &use_float, &use_double);
+
+  unsigned vec_size = isVectorized(I);
+  fops.add("vector_size", vec_size);
+
+  if (use_float){
+    fops.add("precision", 23);
+    fops.add("range", 8);
+  }else if (use_double){
+    fops.add("precision", 52);
+    fops.add("range", 11);
+  }else{
+    std::cerr << "An fops uses float and double it's strange" << std::endl;
+  }
+}
+
+bool add_call_metadata(pt::ptree &call, Instruction &I, Module &M, Function *f)
+{
+  unsigned call_line, call_column;
+  DebugLoc call_loc = I.getDebugLoc();
+
+  call_column = call_loc.getCol();
+  call_line = call_loc.getLine();
+
+  const TargetLibraryInfo &TLI = getTLI(f);
+
+  LibFunc libfunc;
+
+  bool is_from_library = TLI.getLibFunc(f->getName(), libfunc);
+
+  // Test if f is instrinsic //
+  bool is_intrinsic = f->isIntrinsic();
+
+  // Test if the function use double or float
+  bool use_float, use_double;
+  bool instrument = haveFloatingPointArithmetic(&I, f, &use_float, &use_double);
+
+  call.add("filepath", getSourceFileNameAbsPath(M));
+  call.add("name", cast<CallInst>(I).getCalledFunction()->getName().str());
+  call.add("line", call_line);
+  call.add("column", call_column);
+  call.add("use_double", use_double);
+  call.add("use_float", use_float);
+  call.add("is_library", is_from_library);
+
+  // If the called function is an intrinsic function that does
+  // not use float or double, do not instrument it.
+  return instrument && !is_intrinsic;
+}
+
+
 struct VfclibFunc : public ModulePass {
   static char ID;
   std::vector<Function *> OriginalFunctions;
@@ -380,13 +514,12 @@ struct VfclibFunc : public ModulePass {
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
     AU.addRequired<TargetLibraryInfoWrapperPass>();
+    AU.addRequired<LoopInfoWrapperPass>();
   }
 
   VfclibFunc() : ModulePass(ID) { inst_cpt = 1; }
 
   virtual bool runOnModule(Module &M) {
-    TargetLibraryInfoWrapperPass TLIWP;
-
     FloatTy = Type::getFloatTy(M.getContext());
     FloatPtrTy = Type::getFloatPtrTy(M.getContext());
     DoubleTy = Type::getDoubleTy(M.getContext());
@@ -399,6 +532,8 @@ struct VfclibFunc : public ModulePass {
     Types2val[1] = ConstantInt::get(Int32Ty, 1);
     Types2val[2] = ConstantInt::get(Int32Ty, 2);
     Types2val[3] = ConstantInt::get(Int32Ty, 3);
+
+    static size_t loop_cpt = 0;
 
     /*************************************************************************
      *                  Get original functions's names                       *
@@ -413,8 +548,7 @@ struct VfclibFunc : public ModulePass {
      *                  Enter and exit functions declarations                *
      *************************************************************************/
 
-    std::vector<Type *> ArgTypes{Int8PtrTy, Int8Ty, Int8Ty,
-                                 Int8Ty,    Int8Ty, Int32Ty};
+    std::vector<Type *> ArgTypes{Int8PtrTy};
 
     // Signature of enter_function and exit_function
     FunctionType *FunTy =
@@ -429,6 +563,107 @@ struct VfclibFunc : public ModulePass {
     func_exit = Function::Create(FunTy, Function::ExternalLinkage,
                                  "vfc_exit_function", &M);
     func_exit->setCallingConv(CallingConv::C);
+
+    /*************************************************************************
+     *                    Create Instrumentation Profile                     *
+     *************************************************************************/
+
+    std::map<Loop *, std::pair<pt::ptree, pt::ptree>> loops_map;
+    std::map<Loop *, unsigned> loops_start;
+    std::vector<Loop*> loops_stack;
+    unsigned bb_cpt = 0;
+
+    // profile tree
+    pt::ptree profile;
+
+    for (auto &F : M) {
+      if (F.size() == 0)
+        continue;
+
+      // get the loop informations of the function
+      LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
+
+      // function tree
+      pt::ptree function, func_body;
+
+      // add metadata
+      add_function_metadata(function, F, M);
+
+      for (auto &B : F) {
+        // get the loop associated with this basic block
+        Loop *L = LI.getLoopFor(&B);
+
+        // 
+        if (L != NULL && loops_map.find(L) == loops_map.end()) {
+          loops_map.insert(std::pair<Loop *, std::pair<pt::ptree, pt::ptree>>(L, std::pair<pt::ptree, pt::ptree>(pt::ptree(), pt::ptree())));
+          loops_start.insert(std::pair<Loop *, unsigned>(L, bb_cpt));
+          loops_stack.push_back(L);
+
+          add_loop_metadata(loops_map[L].first, L, M);
+        }
+
+        for (auto &I : B) {
+          Fops ops = getFops(I);
+
+          if (ops != FOP_IGNORE) {
+            // fops tree
+            pt::ptree fops;
+
+            add_fops_metadata(fops, ops, I, M);
+
+              if (L != NULL){
+                loops_map[L].second.add_child("fops", fops);
+              }else {
+                func_body.add_child("fops", fops);
+              }
+          }
+
+          if (isa<CallInst>(I)) {
+            if (Function *f = cast<CallInst>(I).getCalledFunction()) {
+              // call tree
+              pt::ptree call;
+
+              if (add_call_metadata(call, I, M, f)){
+                if (L != NULL){
+                  loops_map[L].second.add_child("call", call);
+                }else {
+                  func_body.add_child("call", call);
+                }                
+              }
+            }
+          }
+        }
+
+        bb_cpt++;
+
+        for (auto it = loops_start.begin(); it != loops_start.end(); ){
+          L = (*it).first;
+          if (L->getNumBlocks() == bb_cpt - loops_start[L] && loops_map[L].second.size()) {
+            loops_map[L].first.add_child("body", loops_map[L].second);
+            
+            if (Loop* P = L->getParentLoop()){
+              loops_map[P].second.add_child("loop", loops_map[L].first);
+            }else{
+              func_body.add_child("loop", loops_map[L].first);
+            }
+            
+            it = loops_start.erase(it);
+            loops_map.erase(L);
+          }else{
+            it++;
+          }     
+        }
+      }
+
+      function.add_child("body", func_body);
+      profile.add_child("profile.function", function);
+    }
+
+    // save instrumentation informations
+    std::ofstream file("vfc_profile.xml");
+
+    boost::property_tree::write_xml( file, profile,
+          boost::property_tree::xml_writer_make_settings<std::string>(' ', 2));
 
     /*************************************************************************
      *                             Main special case                         *
@@ -451,7 +686,7 @@ struct VfclibFunc : public ModulePass {
       bool use_float, use_double;
 
       // Test if the function use double or float
-      haveFloatingPointArithmetic(NULL, Main, 0, 0, &use_float, &use_double, M);
+      haveFloatingPointArithmetic(NULL, Main, &use_float, &use_double);
 
       // Delete Main Body
       Main->deleteBody();
@@ -462,16 +697,8 @@ struct VfclibFunc : public ModulePass {
       // Create function ID
       Value *FunctionID = Builder.CreateGlobalStringPtr(FunctionName);
 
-      // Constants creation
-      Constant *isLibraryFunction = ConstantInt::get(Int8Ty, 0);
-      Constant *isInstrinsicFunction = ConstantInt::get(Int8Ty, 0);
-      Constant *haveFloat = ConstantInt::get(Int8Ty, use_float);
-      Constant *haveDouble = ConstantInt::get(Int8Ty, use_double);
-
       // Enter metadata arguments
-      std::vector<Value *> MetaData{FunctionID, isLibraryFunction,
-                                    isInstrinsicFunction, haveFloat,
-                                    haveDouble};
+      std::vector<Value *> MetaData{FunctionID};
 
       Clone->setName(NewName);
 
@@ -481,8 +708,9 @@ struct VfclibFunc : public ModulePass {
     }
 
     /*************************************************************************
-     *                             Function calls                            *
+     *                      Instrument Function calls                        *
      *************************************************************************/
+
     for (auto &F : OriginalFunctions) {
       if (F->getSubprogram()) {
         std::string Parent = F->getSubprogram()->getName().str();
@@ -518,29 +746,12 @@ struct VfclibFunc : public ModulePass {
                                              "/" + Line + "/" +
                                              std::to_string(++inst_cpt);
 
-                  // Test if f is a library function //
-#if LLVM_VERSION_MAJOR >= 10
-                  const TargetLibraryInfo &TLI = TLIWP.getTLI(*f);
-#else
-                  const TargetLibraryInfo &TLI = TLIWP.getTLI();
-#endif
-
-                  LibFunc libfunc;
-
-                  bool is_from_library = TLI.getLibFunc(f->getName(), libfunc);
-
                   // Test if f is instrinsic //
                   bool is_intrinsic = f->isIntrinsic();
 
-                  // Test if the function use double or float
-                  bool use_float, use_double;
-                  haveFloatingPointArithmetic(pi, f, is_from_library,
-                                              is_intrinsic, &use_float,
-                                              &use_double, M);
-
                   // If the called function is an intrinsic function that does
                   // not use float or double, do not instrument it.
-                  if (is_intrinsic && !(use_float || use_double)) {
+                  if (is_intrinsic) {
                     continue;
                   }
 
@@ -548,18 +759,8 @@ struct VfclibFunc : public ModulePass {
                   Value *FunctionID =
                       Builder.CreateGlobalStringPtr(FunctionName);
 
-                  // Constants creation
-                  Constant *isLibraryFunction =
-                      ConstantInt::get(Int8Ty, is_from_library);
-                  Constant *isInstrinsicFunction =
-                      ConstantInt::get(Int8Ty, is_intrinsic);
-                  Constant *haveFloat = ConstantInt::get(Int8Ty, use_float);
-                  Constant *haveDouble = ConstantInt::get(Int8Ty, use_double);
-
                   // Enter function arguments
-                  std::vector<Value *> MetaData{FunctionID, isLibraryFunction,
-                                                isInstrinsicFunction, haveFloat,
-                                                haveDouble};
+                  std::vector<Value *> MetaData{FunctionID};
 
                   Type *ReturnTy = f->getReturnType();
                   std::vector<Type *> CallTypes;
