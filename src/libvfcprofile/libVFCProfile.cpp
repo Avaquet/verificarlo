@@ -405,8 +405,7 @@ struct VfclibProfile : public ModulePass {
         Loop *L = LI.getLoopFor(&B);
 
         for (auto &I : B) {
-          if (!(I.isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(I)) &&
-              mustInstrument(I)) {
+          if (mustInstrument(I)) {
             pt::ptree instruction;
 
             if (isa<CallInst>(I)) {

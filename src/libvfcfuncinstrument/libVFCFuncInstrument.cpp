@@ -629,8 +629,7 @@ struct VfclibFunc : public ModulePass {
           for (auto ii = B.begin(); ii != B.end();) {
             Instruction *pi = &(*ii++);
 
-            if (!(pi->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(*pi)) &&
-                mustInstrument(*pi) && isa<CallInst>(pi)) {
+            if (mustInstrument(*pi) && isa<CallInst>(pi)) {
               // collect metadata info //
               Function *f = cast<CallInst>(pi)->getCalledFunction();
 
