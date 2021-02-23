@@ -23,6 +23,7 @@ static const unsigned int hashmap_prime_2 = 5009;
 
 #ifndef __VFC_HASHMAP_HEADER__
 
+/* Verificarlo hash map */
 struct vfc_hashmap_st {
   size_t nbits;
   size_t mask;
@@ -32,10 +33,17 @@ struct vfc_hashmap_st {
   size_t nitems;
   size_t n_deleted_items;
 };
+
 typedef struct vfc_hashmap_st *vfc_hashmap_t;
 
 // allocate and initialize the map
 vfc_hashmap_t vfc_hashmap_create();
+
+// initialize an empty map
+void vfc_hashmap_init(vfc_hashmap_t map);
+
+// free the array of items
+void vfc_hashmap_free_items(vfc_hashmap_t map);
 
 // get the value at an index of a map
 size_t get_value_at(size_t *items, size_t i);
@@ -77,32 +85,46 @@ size_t vfc_hashmap_str_function(const char *id);
  * to stock and access quickly internal data.
  *******************************************************************/
 
-// free the map
-void vfc_hashmap_destroy(vfc_hashmap_t map) {
+// free the array of items
+void vfc_hashmap_free_items(vfc_hashmap_t map) {
   if (map) {
     free(map->items);
   }
+}
+
+// free the map
+void vfc_hashmap_destroy(vfc_hashmap_t map) {
+  vfc_hashmap_free_items(map);
   free(map);
+}
+
+// initialize an empty map
+void vfc_hashmap_init(vfc_hashmap_t map) {
+  if (map == NULL) {
+    return;
+  }
+
+  map->nbits = 3;
+  map->capacity = (size_t)(1 << map->nbits);
+  map->mask = map->capacity - 1;
+
+  // an item is now a value and a key
+  map->items = calloc(map->capacity, 2 * sizeof(size_t));
+  if (map->items == NULL) {
+    vfc_hashmap_destroy(map);
+    return;
+  }
+
+  map->nitems = 0;
+  map->n_deleted_items = 0;
 }
 
 // allocate and initialize the map
 vfc_hashmap_t vfc_hashmap_create() {
   vfc_hashmap_t map = calloc(1, sizeof(struct vfc_hashmap_st));
 
-  if (map == NULL) {
-    return NULL;
-  }
-  map->nbits = 3;
-  map->capacity = (size_t)(1 << map->nbits);
-  map->mask = map->capacity - 1;
-  // an item is now a value and a key
-  map->items = calloc(map->capacity, 2 * sizeof(size_t));
-  if (map->items == NULL) {
-    vfc_hashmap_destroy(map);
-    return NULL;
-  }
-  map->nitems = 0;
-  map->n_deleted_items = 0;
+  vfc_hashmap_init(map);
+
   return map;
 }
 

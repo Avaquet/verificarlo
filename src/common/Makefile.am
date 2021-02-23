@@ -1,4 +1,4 @@
-noinst_LTLIBRARIES = libtinymt64.la libvprec_tools.la libvprec_utils.la libvfc_hashmap.la
+noinst_LTLIBRARIES = libtinymt64.la libvprec_tools.la libvfc_hashmap.la
 
 libtinymt64_la_CFLAGS = -fPIC -static
 libtinymt64_la_SOURCES = \
@@ -14,10 +14,5 @@ libvfc_hashmap_la_CFLAGS = -fPIC -static
 libvfc_hashmap_la_SOURCES = \
 	vfc_hashmap.h \
 	vfc_hashmap.c
-
-libvprec_utils_la_CFLAGS = -fPIC -static `xml2-config --cflags --libs`
-libvprec_utils_la_SOURCES = \
-	vprec_utils.h \
-	vprec_utils.c
 
 library_includedir =$(includedir)/

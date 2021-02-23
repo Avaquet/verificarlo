@@ -1,4 +1,4 @@
-SUBDIRS=common libvfcfuncinstrument libvfcinstrument backends vfcwrapper
+SUBDIRS=common libvfcfuncinstrument libvfcinstrument libvfcprofile  backends vfcwrapper
 include_HEADERS=common/interflop.h
 dist_bin_SCRIPTS=vfc_ddebug vfc_precexp vfc_report
 pkgpython_PYTHON=ddebug/__init__.py \

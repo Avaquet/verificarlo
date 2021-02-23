@@ -235,62 +235,64 @@ static inline void debug_print_double(void *context,
   }
 
 static void _interflop_add_float(const float a, const float b, float *c,
-                                 void *context) {
+                                 char *id, void *context) {
   *c = a + b;
   debug_print_float(context, ARITHMETIC, "+", a, b, *c);
 }
 
 static void _interflop_sub_float(const float a, const float b, float *c,
-                                 void *context) {
+                                 char *id, void *context) {
   *c = a - b;
   debug_print_float(context, ARITHMETIC, "-", a, b, *c);
 }
 
 static void _interflop_mul_float(const float a, const float b, float *c,
-                                 void *context) {
+                                 char *id, void *context) {
   *c = a * b;
   debug_print_float(context, ARITHMETIC, "*", a, b, *c);
 }
 
 static void _interflop_div_float(const float a, const float b, float *c,
-                                 void *context) {
+                                 char *id, void *context) {
   *c = a / b;
   debug_print_float(context, ARITHMETIC, "/", a, b, *c);
 }
 
 static void _interflop_cmp_float(const enum FCMP_PREDICATE p, const float a,
-                                 const float b, int *c, void *context) {
+                                 const float b, int *c, char *id,
+                                 void *context) {
   char *str = "";
   SELECT_FLOAT_CMP(a, b, c, p, str);
   debug_print_float(context, COMPARISON, str, a, b, *c);
 }
 
 static void _interflop_add_double(const double a, const double b, double *c,
-                                  void *context) {
+                                  char *id, void *context) {
   *c = a + b;
   debug_print_double(context, ARITHMETIC, "+", a, b, *c);
 }
 
 static void _interflop_sub_double(const double a, const double b, double *c,
-                                  void *context) {
+                                  char *id, void *context) {
   *c = a - b;
   debug_print_double(context, ARITHMETIC, "-", a, b, *c);
 }
 
 static void _interflop_mul_double(const double a, const double b, double *c,
-                                  void *context) {
+                                  char *id, void *context) {
   *c = a * b;
   debug_print_double(context, ARITHMETIC, "*", a, b, *c);
 }
 
 static void _interflop_div_double(const double a, const double b, double *c,
-                                  void *context) {
+                                  char *id, void *context) {
   *c = a / b;
   debug_print_double(context, ARITHMETIC, "/", a, b, *c);
 }
 
 static void _interflop_cmp_double(const enum FCMP_PREDICATE p, const double a,
-                                  const double b, int *c, void *context) {
+                                  const double b, int *c, char *id,
+                                  void *context) {
   char *str = "";
   SELECT_FLOAT_CMP(a, b, c, p, str);
   debug_print_double(context, COMPARISON, str, a, b, *c);
@@ -343,8 +345,9 @@ void init_context(t_context *context) {
 
 static struct argp argp = {options, parse_opt, "", "", NULL, NULL, NULL};
 
-struct interflop_backend_interface_t interflop_init(int argc, char **argv,
-                                                    void **context) {
+struct interflop_backend_interface_t
+interflop_init(int argc, char **argv, interflop_function_stack_t call_stack,
+               vfc_hashmap_t inst_map, void **context) {
 
   /* Initialize the logger */
   logger_init();

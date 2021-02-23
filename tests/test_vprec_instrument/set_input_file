@@ -29,11 +29,49 @@ if not os.path.exists(InputFileName):
 
 tree = etree.parse(InputFileName)
 
-for function in tree.iter("function"):
-    
-    CurrentFunction = function[0].text.split(sep="/")[1] + "/" + function[0].text.split(sep="/")[2]
+for function in tree.iter("call"):      
+    CurrentFunction = function[7].text
+    ParentFunction = function[2].text
+    IDFunction = "{}/{}".format(ParentFunction, CurrentFunction)
 
+    if IDFunction in FunctionsList:
+        nb_in = int(function[9].text)
+        nb_out = int(function[10+nb_in].text)
+        
+        for i in range(10,10+nb_in):
+            arg = function[i]
+            if arg[2].text == '0' or arg[2].text == '2':
+                arg[3].text = str(PrecFloat[0])
+                arg[4].text = str(RangeFloat[0])
+            elif arg[2].text == '1' or arg[2].text == '3':
+                arg[3].text = str(PrecDouble[0])
+                arg[4].text = str(RangeDouble[0])
+
+        
+        for i in range(11+nb_in, 11+nb_in+nb_out):
+            arg = function[i]
+            if arg[2].text == '0' or arg[2].text == '0':
+                arg[3].text = str(PrecFloat[0])
+                arg[4].text = str(RangeFloat[0])
+            elif arg[2].text == '1' or arg[2].text == '3':
+                arg[3].text = str(PrecDouble[0])
+                arg[4].text = str(RangeDouble[0])
+
+for i in range(len(FunctionsList)):
+    FunctionsList[i] = FunctionsList[i].split(sep="/")[1]
+
+for fops in tree.iter("fops"):      
+    CurrentFunction = fops[2].text
+    
     if CurrentFunction in FunctionsList:
+        if fops[8].text == '0' or fops[8].text == '2':
+            fops[10].text = str(PrecFloat[0])
+            fops[11].text = str(RangeFloat[0])
+        elif fops[8].text == '1' or fops[8].text == '3':
+            fops[10].text = str(PrecDouble[0])
+            fops[11].text = str(RangeDouble[0])
+
+"""
         function[5].text = str(PrecDouble[0])
         function[6].text = str(RangeDouble[0])
         function[7].text = str(PrecFloat[0])
@@ -60,5 +98,5 @@ for function in tree.iter("function"):
             else:
                 print("Unknow Argument type")
                 exit(0)
-
+        """
 tree.write(InputFileName)

@@ -50,7 +50,6 @@
 #include "../../common/logger.h"
 #include "../../common/vfc_hashmap.h"
 #include "../../common/vprec_tools.h"
-#include "../../common/vprec_utils.h"
 
 typedef enum {
   KEY_PREC_B32,
@@ -81,6 +80,8 @@ static const char key_err_exp_str[] = "max-abs-error-exponent";
 static const char key_instrument_str[] = "instrument";
 static const char key_daz_str[] = "daz";
 static const char key_ftz_str[] = "ftz";
+static vfc_hashmap_t _vfc_inst_map;
+static interflop_function_stack_t _vfc_call_stack;
 
 typedef struct {
   bool relErr;
@@ -148,9 +149,10 @@ static int VPRECLIB_BINARY32_RANGE = VPREC_RANGE_BINARY32_DEFAULT;
 static int VPRECLIB_BINARY64_RANGE = VPREC_RANGE_BINARY64_DEFAULT;
 
 static float _vprec_binary32_binary_op(float a, float b,
-                                       const vprec_operation op, void *context);
+                                       const vprec_operation op, char *id,
+                                       void *context);
 static double _vprec_binary64_binary_op(double a, double b,
-                                        const vprec_operation op,
+                                        const vprec_operation op, char *id,
                                         void *context);
 
 /* variables and structure for instrumentation mode */
@@ -170,8 +172,8 @@ typedef enum {
 static const char *vprec_input_file = NULL;
 static const char *vprec_output_file = NULL;
 static FILE *vprec_log_file = NULL;
-static vprec_inst_mode VPREC_INST_MODE = VPREC_INST_MODE_DEFAULT;
 static size_t vprec_log_depth = 0;
+static vprec_inst_mode VPREC_INST_MODE = VPREC_INST_MODE_DEFAULT;
 
 /* instrumentation modes' names */
 static const char *VPREC_INST_MODE_STR[] = {"arguments", "operations", "all",
@@ -555,21 +557,48 @@ static double _vprec_round_binary64(double a, char is_input, void *context,
 
 static inline float _vprec_binary32_binary_op(float a, float b,
                                               const vprec_operation op,
-                                              void *context) {
+                                              char *id, void *context) {
   float res = 0;
+  unsigned precision, range;
+
+  if (_vfc_inst_map != NULL) {
+    // if the internal operations should not be rounded
+    if (VPREC_INST_MODE == vprecinst_none || VPREC_INST_MODE == vprecinst_arg) {
+      perform_binary_op(op, res, a, b);
+      return res;
+    }
+
+    // if the operation is not identified
+    if (id == NULL) {
+      logger_error("The fops %s cannot be found in the map", id);
+    }
+
+    // get the fops metadata
+    interflop_instruction_info_t *inst_info =
+        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
+
+    // if the operation is not identified
+    if (inst_info == NULL || inst_info->fopsInfo == NULL) {
+      logger_error("The fops %s cannot be found in the map", id);
+    }
+
+    precision = inst_info->fopsInfo->precision;
+    range = inst_info->fopsInfo->range;
+
+  } else {
+    precision = VPRECLIB_BINARY32_PRECISION;
+    range = VPRECLIB_BINARY32_RANGE;
+  }
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) {
-    a = _vprec_round_binary32(a, 1, context, VPRECLIB_BINARY32_RANGE,
-                              VPRECLIB_BINARY32_PRECISION);
-    b = _vprec_round_binary32(b, 1, context, VPRECLIB_BINARY32_RANGE,
-                              VPRECLIB_BINARY32_PRECISION);
+    a = _vprec_round_binary32(a, 1, context, range, precision);
+    b = _vprec_round_binary32(b, 1, context, range, precision);
   }
 
   perform_binary_op(op, res, a, b);
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) {
-    res = _vprec_round_binary32(res, 0, context, VPRECLIB_BINARY32_RANGE,
-                                VPRECLIB_BINARY32_PRECISION);
+    res = _vprec_round_binary32(res, 0, context, range, precision);
   }
 
   return res;
@@ -577,21 +606,47 @@ static inline float _vprec_binary32_binary_op(float a, float b,
 
 static inline double _vprec_binary64_binary_op(double a, double b,
                                                const vprec_operation op,
-                                               void *context) {
+                                               char *id, void *context) {
   double res = 0;
+  unsigned precision, range;
+
+  if (_vfc_inst_map != NULL) {
+    // if the internal operations should not be rounded
+    if (VPREC_INST_MODE == vprecinst_none || VPREC_INST_MODE == vprecinst_arg) {
+      perform_binary_op(op, res, a, b);
+      return res;
+    }
+
+    // if the operation is not identified
+    if (id == NULL) {
+      logger_error("The fops %s cannot be found in the map", id);
+    }
+
+    // get the fops metadata
+    interflop_instruction_info_t *inst_info =
+        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
+
+    // if the operation is not identified
+    if (inst_info == NULL || inst_info->fopsInfo == NULL) {
+      logger_error("The fops %s cannot be found in the map", id);
+    }
+
+    precision = inst_info->fopsInfo->precision;
+    range = inst_info->fopsInfo->range;
+  } else {
+    precision = VPRECLIB_BINARY64_PRECISION;
+    range = VPRECLIB_BINARY64_RANGE;
+  }
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) {
-    a = _vprec_round_binary64(a, 1, context, VPRECLIB_BINARY64_RANGE,
-                              VPRECLIB_BINARY64_PRECISION);
-    b = _vprec_round_binary64(b, 1, context, VPRECLIB_BINARY64_RANGE,
-                              VPRECLIB_BINARY64_PRECISION);
+    a = _vprec_round_binary64(a, 1, context, range, precision);
+    b = _vprec_round_binary64(b, 1, context, range, precision);
   }
 
   perform_binary_op(op, res, a, b);
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) {
-    res = _vprec_round_binary64(res, 0, context, VPRECLIB_BINARY64_RANGE,
-                                VPRECLIB_BINARY64_PRECISION);
+    res = _vprec_round_binary64(res, 0, context, range, precision);
   }
 
   return res;
@@ -605,10 +660,133 @@ static inline double _vprec_binary64_binary_op(double a, double b,
  * the desired precision or to round arguments, depending on the mode.
  *************************************************************************/
 
+/*
+void _vprec_min_max(bool isFloat, void *tmp_value,
+                    interflop_arg_info_t *arg_info) {
+  if (isFloat) {
+    float *value = tmp_value;
+
+    if (!(isnan(*value) || isinf(*value))) {
+      arg_info->minRange = (floor(*value) < arg_info->minRange)
+                               ? floorf(*value)
+                               : arg_info->minRange;
+      arg_info->maxRange = (ceil(*value) > arg_info->maxRange)
+                               ? ceilf(*value)
+                               : arg_info->maxRange;
+    }
+  } else {
+    double *value = tmp_value;
+
+    if (!(isnan(*value) || isinf(*value))) {
+      arg_info->minRange = (floor(*value) < arg_info->minRange)
+                               ? floor(*value)
+                               : arg_info->minRange;
+      arg_info->maxRange = (ceil(*value) > arg_info->maxRange)
+                               ? ceil(*value)
+                               : arg_info->maxRange;
+    }
+  }
+}
+*/
+
+void _vprec_round_arg(va_list ap, int isInput, enum FTYPES argType,
+                      unsigned argSize, unsigned precision, unsigned range,
+                      void *context) {
+  if (argType == FDOUBLE) {
+    double *value = va_arg(ap, double *);
+
+    // round the argument
+    *value = _vprec_round_binary64(*value, isInput, context, range, precision);
+
+    // set the minimum and maximum values
+    //_vprec_min_max(false, value, arg_info);
+
+  } else if (argType == FFLOAT) {
+    float *value = va_arg(ap, float *);
+
+    // round the argument
+    *value = _vprec_round_binary32(*value, isInput, context, range, precision);
+
+    // set the minimum and maximum values
+    //_vprec_min_max(true, value, arg_info);
+
+  } else if (argType == FDOUBLE_PTR) {
+    double *value = va_arg(ap, double *);
+
+    for (unsigned int j = 0; value != NULL && j < argSize; j++, value++) {
+      // round the argument
+      *value =
+          _vprec_round_binary64(*value, isInput, context, range, precision);
+
+      // set the minimum and maximum values
+      //_vprec_min_max(false, value, arg_info);
+    }
+  } else if (argType == FFLOAT_PTR) {
+    float *value = va_arg(ap, float *);
+
+    for (unsigned int j = 0; value != NULL && j < argSize; j++, value++) {
+      // round the argument
+      *value =
+          _vprec_round_binary32(*value, isInput, context, range, precision);
+
+      // set the minimum and maximum values
+      //_vprec_min_max(true, value, arg_info);
+    }
+  }
+}
+
 // Set precision for internal operations and round input arguments for a given
 // function call
-void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
-                               int nb_args, va_list ap) {
+void _interflop_enter_function(char *id, void *context, int nb_args,
+                               va_list ap) {
+  // boolean which indicates if arguments should be rounded or not depending on
+  // modes
+  int mode_flag =
+      (((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) &&
+       ((VPREC_INST_MODE == vprecinst_all) ||
+        (VPREC_INST_MODE == vprecinst_arg)) &&
+       VPREC_INST_MODE != vprecinst_none);
+
+  if (!mode_flag) {
+    return;
+  }
+
+  if (_vfc_inst_map != NULL) {
+    // get the call metadata
+    interflop_instruction_info_t *inst_info =
+        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
+
+    if (inst_info == NULL || inst_info->functionInfo == NULL)
+      logger_error("The function %s cannot be found in the map\n", id);
+
+    for (int i = 0; i < nb_args; i++) {
+      enum FTYPES argType = va_arg(ap, enum FTYPES);
+      unsigned argSize = va_arg(ap, unsigned);
+
+      // get the arg metadata
+      interflop_arg_info_t *arg_info = &(inst_info->functionInfo->inputArgs[i]);
+
+      // round the arg and set the minimum and maximum values
+      _vprec_round_arg(ap, 1, argType, argSize, arg_info->precision,
+                       arg_info->range, context);
+    }
+  } else {
+    for (int i = 0; i < nb_args; i++) {
+      enum FTYPES argType = va_arg(ap, enum FTYPES);
+      unsigned argSize = va_arg(ap, unsigned);
+      unsigned precision = (argType == FDOUBLE || argType == FDOUBLE_PTR)
+                               ? VPRECLIB_BINARY64_PRECISION
+                               : VPRECLIB_BINARY32_PRECISION;
+      unsigned range = (argType == FDOUBLE || argType == FDOUBLE_PTR)
+                           ? VPRECLIB_BINARY64_RANGE
+                           : VPRECLIB_BINARY32_RANGE;
+
+      // round the arg and set the minimum and maximum values
+      _vprec_round_arg(ap, 1, argType, argSize, precision, range, context);
+    }
+  }
+
+  /*
   interflop_function_info_t *function_info = stack->array[stack->top];
 
   if (function_info == NULL)
@@ -834,12 +1012,61 @@ void _interflop_enter_function(interflop_function_stack_t *stack, void *context,
 
   // increment depth
   vprec_log_depth++;
+  */
 }
 
 // Set precision for internal operations and round output arguments for a given
 // function call
-void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
-                              int nb_args, va_list ap) {
+void _interflop_exit_function(char *id, void *context, int nb_args,
+                              va_list ap) {
+  // boolean which indicates if arguments should be rounded or not depending on
+  // modes
+  int mode_flag =
+      (((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) &&
+       (VPREC_INST_MODE == vprecinst_all || VPREC_INST_MODE == vprecinst_arg) &&
+       VPREC_INST_MODE != vprecinst_none);
+
+  if (!mode_flag) {
+    return;
+  }
+
+  if (_vfc_inst_map != NULL) {
+    // get the call metadata
+    interflop_instruction_info_t *inst_info =
+        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
+
+    if (inst_info == NULL || inst_info->functionInfo == NULL)
+      logger_error("The function %s cannot be found in the map\n", id);
+
+    for (int i = 0; i < nb_args; i++) {
+      enum FTYPES argType = va_arg(ap, enum FTYPES);
+      unsigned argSize = va_arg(ap, unsigned);
+
+      // get the arg metadata
+      interflop_arg_info_t *arg_info =
+          &(inst_info->functionInfo->outputArgs[i]);
+
+      // round the arg and set the minimum and maximum values
+      _vprec_round_arg(ap, 0, argType, argSize, arg_info->precision,
+                       arg_info->range, context);
+    }
+  } else {
+    for (int i = 0; i < nb_args; i++) {
+      enum FTYPES argType = va_arg(ap, enum FTYPES);
+      unsigned argSize = va_arg(ap, unsigned);
+      unsigned precision = (argType == FDOUBLE || argType == FDOUBLE_PTR)
+                               ? VPRECLIB_BINARY64_PRECISION
+                               : VPRECLIB_BINARY32_PRECISION;
+      unsigned range = (argType == FDOUBLE || argType == FDOUBLE_PTR)
+                           ? VPRECLIB_BINARY64_RANGE
+                           : VPRECLIB_BINARY32_RANGE;
+
+      // round the arg and set the minimum and maximum values
+      _vprec_round_arg(ap, 0, argType, argSize, precision, range, context);
+    }
+  }
+
+  /*
   interflop_function_info_t *function_info = stack->array[stack->top];
 
   // decrement depth
@@ -1049,6 +1276,7 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
     }
   }
   _vprec_print_log(vprec_log_depth, "\n");
+*/
 }
 
 /************************* FPHOOKS FUNCTIONS *************************
@@ -1057,40 +1285,44 @@ void _interflop_exit_function(interflop_function_stack_t *stack, void *context,
  * point operators
  **********************************************************************/
 
-static void _interflop_add_float(float a, float b, float *c, void *context) {
-  *c = _vprec_binary32_binary_op(a, b, vprec_add, context);
+static void _interflop_add_float(float a, float b, float *c, char *id,
+                                 void *context) {
+  *c = _vprec_binary32_binary_op(a, b, vprec_add, id, context);
 }
 
-static void _interflop_sub_float(float a, float b, float *c, void *context) {
-  *c = _vprec_binary32_binary_op(a, b, vprec_sub, context);
+static void _interflop_sub_float(float a, float b, float *c, char *id,
+                                 void *context) {
+  *c = _vprec_binary32_binary_op(a, b, vprec_sub, id, context);
 }
 
-static void _interflop_mul_float(float a, float b, float *c, void *context) {
-  *c = _vprec_binary32_binary_op(a, b, vprec_mul, context);
+static void _interflop_mul_float(float a, float b, float *c, char *id,
+                                 void *context) {
+  *c = _vprec_binary32_binary_op(a, b, vprec_mul, id, context);
 }
 
-static void _interflop_div_float(float a, float b, float *c, void *context) {
-  *c = _vprec_binary32_binary_op(a, b, vprec_div, context);
+static void _interflop_div_float(float a, float b, float *c, char *id,
+                                 void *context) {
+  *c = _vprec_binary32_binary_op(a, b, vprec_div, id, context);
 }
 
-static void _interflop_add_double(double a, double b, double *c,
+static void _interflop_add_double(double a, double b, double *c, char *id,
                                   void *context) {
-  *c = _vprec_binary64_binary_op(a, b, vprec_add, context);
+  *c = _vprec_binary64_binary_op(a, b, vprec_add, id, context);
 }
 
-static void _interflop_sub_double(double a, double b, double *c,
+static void _interflop_sub_double(double a, double b, double *c, char *id,
                                   void *context) {
-  *c = _vprec_binary64_binary_op(a, b, vprec_sub, context);
+  *c = _vprec_binary64_binary_op(a, b, vprec_sub, id, context);
 }
 
-static void _interflop_mul_double(double a, double b, double *c,
+static void _interflop_mul_double(double a, double b, double *c, char *id,
                                   void *context) {
-  *c = _vprec_binary64_binary_op(a, b, vprec_mul, context);
+  *c = _vprec_binary64_binary_op(a, b, vprec_mul, id, context);
 }
 
-static void _interflop_div_double(double a, double b, double *c,
+static void _interflop_div_double(double a, double b, double *c, char *id,
                                   void *context) {
-  *c = _vprec_binary64_binary_op(a, b, vprec_div, context);
+  *c = _vprec_binary64_binary_op(a, b, vprec_div, id, context);
 }
 
 static struct argp_option options[] = {
@@ -1330,37 +1562,18 @@ void print_information_header(void *context) {
 }
 
 void _interflop_finalize(void *context) {
-  /* save the hashmap */
-  if (vprec_output_file != NULL) {
-    FILE *f = fopen(vprec_output_file, "w");
-    if (f != NULL) {
-      _vprec_write_hasmap(vprec_output_file);
-      fclose(f);
-    } else {
-      logger_error("Output file can't be written");
-    }
-  }
-
   /* close log file */
   if (vprec_log_file != NULL) {
     fclose(vprec_log_file);
   }
-
-  /* free vprec_function_map */
-  vfc_hashmap_free(_vprec_func_map);
-
-  /* destroy vprec_function_map */
-  vfc_hashmap_destroy(_vprec_func_map);
 }
 
-struct interflop_backend_interface_t interflop_init(int argc, char **argv,
-                                                    void **context) {
+struct interflop_backend_interface_t
+interflop_init(int argc, char **argv, interflop_function_stack_t call_stack,
+               vfc_hashmap_t inst_map, void **context) {
 
   /* Initialize the logger */
   logger_init();
-
-  /* Initialize the vprec_function_map */
-  _vprec_func_map = vfc_hashmap_create();
 
   /* Setting to default values */
   _set_vprec_precision_binary32(VPREC_PRECISION_BINARY32_DEFAULT);
@@ -1378,16 +1591,8 @@ struct interflop_backend_interface_t interflop_init(int argc, char **argv,
 
   print_information_header(ctx);
 
-  /* read the hashmap */
-  if (vprec_input_file != NULL) {
-    FILE *f = fopen(vprec_input_file, "r");
-    if (f != NULL) {
-      _vprec_read_hasmap(vprec_input_file);
-      fclose(f);
-    } else {
-      logger_error("Input file can't be found");
-    }
-  }
+  _vfc_inst_map = inst_map;
+  _vfc_call_stack = call_stack;
 
   struct interflop_backend_interface_t interflop_backend_vprec = {
       _interflop_add_float,

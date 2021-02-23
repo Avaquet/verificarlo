@@ -42,28 +42,32 @@
 #include <regex>
 #include <set>
 #include <sstream>
+#include <string>
 #include <utility>
 
 #if LLVM_VERSION_MAJOR < 5
-#define CREATE_CALL3(func, op1, op2, op3)                                      \
-  (Builder.CreateCall(func, {op1, op2, op3}, ""))
-#define CREATE_CALL2(func, op1, op2) (Builder.CreateCall(func, {op1, op2}, ""))
+#define CREATE_CALL3(func, op1, op2, op3, id)                                  \
+  (Builder.CreateCall(func, {op1, op2, op3, id}, ""))
+#define CREATE_CALL2(func, op1, op2, id)                                       \
+  (Builder.CreateCall(func, {op1, op2, id}, ""))
 #define CREATE_STRUCT_GEP(t, i, p) (Builder.CreateStructGEP(t, i, p, ""))
 #define GET_OR_INSERT_FUNCTION(M, name, res, ...)                              \
   M.getOrInsertFunction(name, res, __VA_ARGS__, (Type *)NULL)
 typedef llvm::Constant *_LLVMFunctionType;
 #elif LLVM_VERSION_MAJOR < 9
-#define CREATE_CALL3(func, op1, op2, op3)                                      \
-  (Builder.CreateCall(func, {op1, op2, op3}, ""))
-#define CREATE_CALL2(func, op1, op2) (Builder.CreateCall(func, {op1, op2}, ""))
+#define CREATE_CALL3(func, op1, op2, op3, id)                                  \
+  (Builder.CreateCall(func, {op1, op2, op3, id}, ""))
+#define CREATE_CALL2(func, op1, op2, id)                                       \
+  (Builder.CreateCall(func, {op1, op2, id}, ""))
 #define CREATE_STRUCT_GEP(t, i, p) (Builder.CreateStructGEP(t, i, p, ""))
 #define GET_OR_INSERT_FUNCTION(M, name, res, ...)                              \
   M.getOrInsertFunction(name, res, __VA_ARGS__)
 typedef llvm::Constant *_LLVMFunctionType;
 #else
-#define CREATE_CALL3(func, op1, op2, op3)                                      \
-  (Builder.CreateCall(func, {op1, op2, op3}, ""))
-#define CREATE_CALL2(func, op1, op2) (Builder.CreateCall(func, {op1, op2}, ""))
+#define CREATE_CALL3(func, op1, op2, op3, id)                                  \
+  (Builder.CreateCall(func, {op1, op2, op3, id}, ""))
+#define CREATE_CALL2(func, op1, op2, id)                                       \
+  (Builder.CreateCall(func, {op1, op2, id}, ""))
 #define CREATE_STRUCT_GEP(t, i, p) (Builder.CreateStructGEP(t, i, p, ""))
 #define GET_OR_INSERT_FUNCTION(M, name, res, ...)                              \
   M.getOrInsertFunction(name, res, __VA_ARGS__)
@@ -310,6 +314,19 @@ struct VfclibInst : public ModulePass {
     return modified;
   }
 
+  Value *setInstructionID(IRBuilder<> *Builder, Instruction *I, Function *F,
+                          Module *M) {
+    DebugLoc loc = I->getDebugLoc();
+    std::string func_name = F->getName().str();
+    std::string file_name = M->getSourceFileName();
+    std::string column = std::to_string(loc.getCol());
+    std::string line = std::to_string(loc.getLine());
+
+    std::string ID = file_name + "/" + line + "/" + column;
+
+    return Builder->CreateGlobalStringPtr(ID);
+  }
+
   Value *replaceWithMCACall(Module &M, Instruction *I, Fops opCode) {
     IRBuilder<> Builder(I);
 
@@ -358,21 +375,33 @@ struct VfclibInst : public ModulePass {
     // We call directly a hardcoded helper function
     // no need to go through the vtable at this stage.
     Value *newInst;
+
+    // create the ID of the instruction
+    Value *InstructionID =
+        setInstructionID(&Builder, I, I->getFunction(), I->getModule());
+
     if (opCode == FOP_CMP) {
       FCmpInst *FCI = static_cast<FCmpInst *>(I);
       Type *res = Builder.getInt32Ty();
       if (size > 1) {
         res = VectorType::get(res, size);
       }
-      _LLVMFunctionType hookFunc = GET_OR_INSERT_FUNCTION(
-          M, mcaFunctionName, res, Builder.getInt32Ty(), opType, opType);
-      newInst = CREATE_CALL3(hookFunc, Builder.getInt32(FCI->getPredicate()),
-                             FCI->getOperand(0), FCI->getOperand(1));
+
+      _LLVMFunctionType hookFunc =
+          GET_OR_INSERT_FUNCTION(M, mcaFunctionName, res, Builder.getInt32Ty(),
+                                 opType, opType, Builder.getInt8PtrTy());
+
+      newInst =
+          CREATE_CALL3(hookFunc, Builder.getInt32(FCI->getPredicate()),
+                       FCI->getOperand(0), FCI->getOperand(1), InstructionID);
+
       newInst = Builder.CreateIntCast(newInst, retType, true);
     } else {
-      _LLVMFunctionType hookFunc =
-          GET_OR_INSERT_FUNCTION(M, mcaFunctionName, retType, opType, opType);
-      newInst = CREATE_CALL2(hookFunc, I->getOperand(0), I->getOperand(1));
+      _LLVMFunctionType hookFunc = GET_OR_INSERT_FUNCTION(
+          M, mcaFunctionName, retType, opType, opType, Builder.getInt8PtrTy());
+
+      newInst = CREATE_CALL2(hookFunc, I->getOperand(0), I->getOperand(1),
+                             InstructionID);
     }
 
     return newInst;

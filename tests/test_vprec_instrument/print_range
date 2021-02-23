@@ -22,16 +22,19 @@ if not os.path.exists(InputFileName):
 
 tree = etree.parse(InputFileName)
 
-for function in tree.iter("function"):
-    
-    CurrentFunction = function[0].text.split(sep="/")[1] + "/" + function[0].text.split(sep="/")[2]
+for function in tree.iter("call"):      
+    CurrentFunction = function[7].text
 
     if CurrentFunction in FunctionsList:
-
-        for arg in function.iter("input"):
-            print("input:", function[0].text, arg[4].text, arg[5].text)
-    
-        for arg in function.iter("output"):
-            print("output:", function[0].text, arg[4].text, arg[5].text)
+        nb_in = int(function[10].text)
+        nb_out = int(function[11+nb_in].text)
+        
+        for i in range(11,11+nb_in):
+            arg = function[i]
+            print("input:", function[0].text, arg[5].text, arg[6].text)
+        
+        for i in range(12+nb_in, 12+nb_in+nb_out):
+            arg = function[i]
+            print("output:", function[0].text, arg[5].text, arg[6].text)            
 
 tree.write(InputFileName)

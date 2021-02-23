@@ -107,42 +107,46 @@ static inline double _noise_binary64(const int exp) {
   })
 
 /* Cancellations can only happen during additions and substractions */
-static void _interflop_add_float(float a, float b, float *c, void *context) {
+static void _interflop_add_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = a + b;
   cancell(a, b, c);
 }
 
-static void _interflop_sub_float(float a, float b, float *c, void *context) {
+static void _interflop_sub_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = a - b;
   cancell(a, b, c);
 }
 
-static void _interflop_add_double(double a, double b, double *c,
+static void _interflop_add_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = a + b;
   cancell(a, b, c);
 }
 
-static void _interflop_sub_double(double a, double b, double *c,
+static void _interflop_sub_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = a - b;
   cancell(a, b, c);
 }
 
-static void _interflop_mul_float(float a, float b, float *c, void *context) {
+static void _interflop_mul_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = a * b;
 }
 
-static void _interflop_div_float(float a, float b, float *c, void *context) {
+static void _interflop_div_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = a / b;
 }
 
-static void _interflop_mul_double(double a, double b, double *c,
+static void _interflop_mul_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = a * b;
 }
 
-static void _interflop_div_double(double a, double b, double *c,
+static void _interflop_div_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = a / b;
 }
@@ -192,8 +196,9 @@ static void init_context(t_context *ctx) {
   ctx->seed = 0ULL;
 }
 
-struct interflop_backend_interface_t interflop_init(int argc, char **argv,
-                                                    void **context) {
+struct interflop_backend_interface_t
+interflop_init(int argc, char **argv, interflop_function_stack_t call_stack,
+               vfc_hashmap_t inst_map, void **context) {
 
   logger_init();
 

@@ -317,38 +317,42 @@ static double _mca_binary64_unary_op(double a, mpfr_unr mpfr_op,
  * point operators
  **********************************************************************/
 
-static void _interflop_add_float(float a, float b, float *c, void *context) {
+static void _interflop_add_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _mca_binary32_binary_op(a, b, (mpfr_bin)MP_ADD, context);
 }
 
-static void _interflop_sub_float(float a, float b, float *c, void *context) {
+static void _interflop_sub_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _mca_binary32_binary_op(a, b, (mpfr_bin)MP_SUB, context);
 }
 
-static void _interflop_mul_float(float a, float b, float *c, void *context) {
+static void _interflop_mul_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _mca_binary32_binary_op(a, b, (mpfr_bin)MP_MUL, context);
 }
 
-static void _interflop_div_float(float a, float b, float *c, void *context) {
+static void _interflop_div_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _mca_binary32_binary_op(a, b, (mpfr_bin)MP_DIV, context);
 }
 
-static void _interflop_add_double(double a, double b, double *c,
+static void _interflop_add_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _mca_binary64_binary_op(a, b, (mpfr_bin)MP_ADD, context);
 }
 
-static void _interflop_sub_double(double a, double b, double *c,
+static void _interflop_sub_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _mca_binary64_binary_op(a, b, (mpfr_bin)MP_SUB, context);
 }
 
-static void _interflop_mul_double(double a, double b, double *c,
+static void _interflop_mul_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _mca_binary64_binary_op(a, b, (mpfr_bin)MP_MUL, context);
 }
 
-static void _interflop_div_double(double a, double b, double *c,
+static void _interflop_div_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _mca_binary64_binary_op(a, b, (mpfr_bin)MP_DIV, context);
 }
@@ -458,8 +462,9 @@ static void print_information_header(void *context) {
               ctx->ftz ? "true" : "false");
 }
 
-struct interflop_backend_interface_t interflop_init(int argc, char **argv,
-                                                    void **context) {
+struct interflop_backend_interface_t
+interflop_init(int argc, char **argv, interflop_function_stack_t call_stack,
+               vfc_hashmap_t inst_map, void **context) {
 
   /* Initialize the logger */
   logger_init();

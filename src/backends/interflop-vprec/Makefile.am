@@ -5,6 +5,5 @@ if WALL_CFLAGS
 libinterflop_vprec_la_CFLAGS += -Wall -Wextra -Wno-varargs
 endif
 libinterflop_vprec_la_LDFLAGS = -lm
-libinterflop_vprec_la_LIBADD = ../../common/libvprec_tools.la ../../common/libvfc_hashmap.la \
-			       ../../common/libvprec_utils.la
+libinterflop_vprec_la_LIBADD = ../../common/libvprec_tools.la ../../common/libvfc_hashmap.la
 library_includedir =$(includedir)/

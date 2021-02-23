@@ -36,9 +36,11 @@ LIBDIR = "%LIBDIR%"
 PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__))
 libvfcinstrument = LIBDIR + '/libvfcinstrument.so'
 libvfcfuncinstrument = LIBDIR + '/libvfcfuncinstrument.so'
+libvfcprofile = LIBDIR + '/libvfcprofile.so'
 mcalib_options = "-rpath {0} -L {0}".format(LIBDIR)
 mcalib_includes = PROJECT_ROOT + "/../include/"
 vfcwrapper = mcalib_includes + 'vfcwrapper.c'
+libxml2_opt = '`xml2-config --cflags`'
 llvm_bindir = "@LLVM_BINDIR@"
 clang = '@CLANG_PATH@'
 clangxx = '@CLANGXX_PATH@'
@@ -48,6 +50,7 @@ FORTRAN_EXTENSIONS = [".f", ".f90", ".f77"]
 C_EXTENSIONS = [".c"]
 CXX_EXTENSIONS = ['.cc', '.cp', '.cpp', '.cxx', 'c++']
 ASSEMBLY_EXTENSIONS = ['.s']
+OBJECT_EXTENSIONS = [".o"]
 linkers = {'clang': clang, 'flang': flang, 'clang++': clangxx}
 default_linker = 'clang'
 temp_files_set = set()
@@ -76,18 +79,17 @@ def fail(msg):
 def is_fortran(name):
     return os.path.splitext(name)[1].lower() in FORTRAN_EXTENSIONS
 
-
 def is_c(name):
     return os.path.splitext(name)[1].lower() in C_EXTENSIONS
-
 
 def is_cpp(name):
     return os.path.splitext(name)[1].lower() in CXX_EXTENSIONS
 
+def is_object(name):
+    return os.path.splitext(name)[1].lower() in OBJECT_EXTENSIONS
 
 def is_assembly(name):
     return os.path.splitext(name)[1].lower() in ASSEMBLY_EXTENSIONS
-
 
 def shell_escape(argument):
     # prevents argument expansion in shell call
@@ -110,11 +112,20 @@ def parse_extra_args(args):
             sources.append(a)
         elif is_assembly(a):
             sources.append(a)
+        elif is_object(a):
+            sources.append(a)
         else:
             options.append(shell_escape(a))
 
     return sources, ' '.join(options)
 
+
+def link_profile_files(sources):
+    shell('echo "<profile>" > vfc_profile.xml')
+    for source in sources:
+        shell('tail -n +2 {source}.xml >> vfc_profile.xml'.format(
+            source=os.path.splitext(source)[0]))
+    shell('echo "</profile>" >> vfc_profile.xml')
 
 def shell(cmd):
     try:
@@ -124,31 +135,35 @@ def shell(cmd):
     except subprocess.CalledProcessError:
         fail('command failed:\n' + cmd)
 
-
 def linker_mode(sources, options, output, args):
     extra_args = "-static " if args.static else "-fPIC "
     extra_args += "-DINST_FCMP " if args.inst_fcmp else ""
     extra_args += "-DDDEBUG " if args.ddebug else ""
     extra_args += "-DINST_FUNC " if args.inst_func else ""
+    extra_args += "-DCOMP_PROFILE" if args.compile_profile else ""
 
-    shell('{clang} -c -O3 -Wno-varargs {extra_args} -o .vfcwrapper.o {vfcwrapper} -I {mcalib_includes}'.format(
+    shell('{clang} -c -O3 -Wno-pointer-sign -Wno-varargs {extra_args} -o .vfcwrapper.o {vfcwrapper} -I {mcalib_includes} {libxml2_opt}'.format(
         clang=clang,
         extra_args=extra_args,
         vfcwrapper=vfcwrapper,
-        mcalib_includes=mcalib_includes))
+        mcalib_includes=mcalib_includes,
+        libxml2_opt=libxml2_opt))
 
     f = tempfile.NamedTemporaryFile(mode='w+')
     if args.static:
-        cmd = '{output} {sources} {options} -static .vfcwrapper.o -lmpfr -lgmp -lm -ldl'.format(
+        cmd = '{output} {sources} {options} -static .vfcwrapper.o -lmpfr -lgmp -lm -ldl -I/usr/include/libxml2 -lxml2'.format(
             output=output,
             sources=' '.join([os.path.splitext(s)[0]+'.o' for s in sources]),
             options=options)
     else:
-        cmd = '{output} {sources} {options} .vfcwrapper.o {mcalib_options} -ldl'.format(
+        cmd = '{output} {sources} {options} .vfcwrapper.o {mcalib_options} -ldl -lxml2'.format(
             output=output,
             sources=' '.join([os.path.splitext(s)[0]+'.o' for s in sources]),
             options=options,
             mcalib_options=mcalib_options)
+
+    if args.compile_profile:
+        link_profile_files(sources)
 
     f.write(cmd)
     f.flush()
@@ -190,7 +205,10 @@ def compiler_mode(sources, options, output, args):
 
         compiler = linkers[args.linker]
 
-        debug = '-g' if args.inst_func else ''
+        debug = '-g'
+
+        if is_object(source):
+            continue
 
         if is_assembly(source):
             if not output:
@@ -226,6 +244,17 @@ def compiler_mode(sources, options, output, args):
         # Activate fcmp instrumentation
         if args.inst_fcmp:
             extra_args += "-vfclibinst-inst-fcmp "
+
+        if args.compile_profile:
+            # Apply profile generation pass
+            shell('{opt} -S  -load {libvfcprofile} -vfclibprofile {ir} -o /dev/null > {basename}.xml '.format(
+                opt=opt,
+                libvfcprofile=libvfcprofile,
+                extra_args=extra_args,
+                ir=ir.name,
+                ins=ins.name,
+                basename=basename
+            ))
 
         if args.inst_func:
             # Apply function's instrumentation pass
@@ -287,6 +316,8 @@ if __name__ == "__main__":
                         help='instrument floating point comparisons')
     parser.add_argument('--inst-func', action='store_true',
                         help='instrument functions')
+    parser.add_argument('--compile-profile', action='store_true',
+                        help='create a profile during the compilation')
     parser.add_argument('--show-cmd', action='store_true',
                         help='show internal commands')
     parser.add_argument('--save-temps', action='store_true',

@@ -18,20 +18,16 @@
 #ifndef __VFC_HASHMAP_H__
 #define __VFC_HASHMAP_H__
 
-#define __VFC_HASHMAP_HEADER__
-
+#include "interflop.h"
 #include <stddef.h>
 
-struct vfc_hashmap_st {
-  size_t nbits;
-  size_t mask;
+#define __VFC_HASHMAP_HEADER__
 
-  size_t capacity;
-  size_t *items;
-  size_t nitems;
-  size_t n_deleted_items;
-};
-typedef struct vfc_hashmap_st *vfc_hashmap_t;
+// initialize an empty map
+void vfc_hashmap_init(vfc_hashmap_t map);
+
+// free the array of items
+void vfc_hashmap_free_items(vfc_hashmap_t map);
 
 // allocate and initialize the map
 vfc_hashmap_t vfc_hashmap_create();

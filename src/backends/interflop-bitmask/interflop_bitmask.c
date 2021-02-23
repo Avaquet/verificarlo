@@ -348,38 +348,42 @@ static double _bitmask_binary64_binary_op(double a, double b,
  * point operators
  **********************************************************************/
 
-static void _interflop_add_float(float a, float b, float *c, void *context) {
+static void _interflop_add_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _bitmask_binary32_binary_op(a, b, bitmask_add, context);
 }
 
-static void _interflop_sub_float(float a, float b, float *c, void *context) {
+static void _interflop_sub_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _bitmask_binary32_binary_op(a, b, bitmask_sub, context);
 }
 
-static void _interflop_mul_float(float a, float b, float *c, void *context) {
+static void _interflop_mul_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _bitmask_binary32_binary_op(a, b, bitmask_mul, context);
 }
 
-static void _interflop_div_float(float a, float b, float *c, void *context) {
+static void _interflop_div_float(float a, float b, float *c, char *id,
+                                 void *context) {
   *c = _bitmask_binary32_binary_op(a, b, bitmask_div, context);
 }
 
-static void _interflop_add_double(double a, double b, double *c,
+static void _interflop_add_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _bitmask_binary64_binary_op(a, b, bitmask_add, context);
 }
 
-static void _interflop_sub_double(double a, double b, double *c,
+static void _interflop_sub_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _bitmask_binary64_binary_op(a, b, bitmask_sub, context);
 }
 
-static void _interflop_mul_double(double a, double b, double *c,
+static void _interflop_mul_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _bitmask_binary64_binary_op(a, b, bitmask_mul, context);
 }
 
-static void _interflop_div_double(double a, double b, double *c,
+static void _interflop_div_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = _bitmask_binary64_binary_op(a, b, bitmask_div, context);
 }
@@ -515,8 +519,9 @@ static void print_information_header(void *context) {
       ctx->daz ? "true" : "false", key_ftz_str, ctx->ftz ? "true" : "false");
 }
 
-struct interflop_backend_interface_t interflop_init(int argc, char **argv,
-                                                    void **context) {
+struct interflop_backend_interface_t
+interflop_init(int argc, char **argv, interflop_function_stack_t call_stack,
+               vfc_hashmap_t inst_map, void **context) {
 
   /* Initialize the logger */
   logger_init();

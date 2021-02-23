@@ -20,8 +20,8 @@
  *                                                                            *
  ******************************************************************************/
 
-#ifndef __LIBVFCFUNCINSTRUMENT_HPP__
-#define __LIBVFCFUNCINSTRUMENT_HPP__
+#ifndef __LIBVFCPROFILE_HPP__
+#define __LIBVFCPROFILE_HPP__
 
 #include "../../config.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
@@ -31,7 +31,6 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugLoc.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Mangler.h"
@@ -43,24 +42,14 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 
 using namespace llvm;
-
-static Function *func_enter;
-static Function *func_exit;
 
 // Enumeration of managed types
 enum Ftypes { FLOAT, DOUBLE, FLOAT_PTR, DOUBLE_PTR };
 
 // Types
-llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy, *Int8Ty, *Int8PtrTy,
-    *Int32Ty;
-
-// Array of values
-Value *Types2val[] = {NULL, NULL, NULL, NULL};
+llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy;
 
 // Floating Point Ops
 enum Fops { FOP_ADD, FOP_SUB, FOP_MUL, FOP_DIV, FOP_CMP, FOP_IGNORE };
