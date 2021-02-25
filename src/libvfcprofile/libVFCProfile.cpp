@@ -26,6 +26,7 @@
 #include <boost/property_tree/ptree_fwd.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <cmath>
+#include <cstring>
 #include <cxxabi.h>
 #include <fstream>
 #include <iostream>
@@ -167,7 +168,6 @@ std::string getArgName(Function *F, Value *V, int i) {
 
   return "parameter_" + std::to_string(i + 1);
 }
-
 // return the absolute path of the module
 std::string getSourceFileNameAbsPath(Module &M) {
   std::string filename = M.getSourceFileName();

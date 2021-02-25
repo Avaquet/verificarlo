@@ -180,11 +180,33 @@ static inline __float128 _fast_pow2_binary128(const int exp) {
   return b128.f128;
 }
 
+// Return the number of the last set bit of a
+static inline int __lsb64(double a) {
+  union {long int i; double f;} u;
+  u.f = a;
+  return GET_PMAN_SIZE(a) - log2(u.i & (-u.i)) + 1;
+}
+
+// Return the number of the last set bit of a
+static inline int __lsb32(float a) {
+  union {int i; float f;} u;
+  u.f = a;
+  return GET_PMAN_SIZE(a) - log2f(u.i & (-u.i)) + 1;
+}
+
 /* Generic call for get_exponent_TYPEOF(X) */
 #define GET_EXP_FLT(X)                                                         \
   _Generic(X, float                                                            \
            : _get_exponent_binary32, double                                    \
            : _get_exponent_binary64, __float128                                \
            : _get_exponent_binary128)(X)
+
+/* Generic call for get last set bit */
+#define GET_LSB(X)                                                             \
+  _Generic(X, float : __lsb32(X), double : __lsb64(X))
+
+/* Generic call for get last set bit */
+#define GET_FABS(X)                                                             \
+  _Generic(X, float : fabsf(X), double : fabs(X))
 
 #endif /* __FLOAT_UTILS_H__ */

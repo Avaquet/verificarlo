@@ -123,8 +123,9 @@ def parse_extra_args(args):
 def link_profile_files(sources):
     shell('echo "<profile>" > vfc_profile.xml')
     for source in sources:
+        filename = os.path.splitext(source)[0]
         shell('tail -n +2 {source}.xml >> vfc_profile.xml'.format(
-            source=os.path.splitext(source)[0]))
+            source=filename))
     shell('echo "</profile>" >> vfc_profile.xml')
 
 def shell(cmd):
@@ -261,6 +262,7 @@ def compiler_mode(sources, options, output, args):
             shell('{opt} -S -load {libvfcfuncinstrument} -vfclibfunc {ir} -o {ins}'.format(
                 opt=opt,
                 libvfcfuncinstrument=libvfcfuncinstrument,
+                source=source,
                 ir=ir.name,
                 ins=ins.name
             ))

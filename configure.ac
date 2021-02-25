@@ -182,6 +182,7 @@ AC_CONFIG_FILES([Makefile
                  src/backends/interflop-cancellation/Makefile
                  src/backends/interflop-bitmask/Makefile
                  src/backends/interflop-vprec/Makefile
+                 src/backends/interflop-analysis/Makefile
                  tests/Makefile
                  tests/paths.sh
                 ])

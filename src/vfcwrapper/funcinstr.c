@@ -290,7 +290,26 @@ void vfc_inst_table_read(vfc_hashmap_t _vfc_inst_map, const char *filename) {
   xmlCleanupParser();
 }
 
-vfc_hashmap_t vfc_inst_table_init() {
+void vfc_hashmap_free_struct(vfc_hashmap_t _vfc_inst_map)
+{
+  for (int ii = 0; ii < _vfc_inst_map->capacity; ii++) {
+    if (get_value_at(_vfc_inst_map->items, ii) != 0) {
+      interflop_instruction_info_t *instruction =
+          (interflop_instruction_info_t *)get_value_at(_vfc_inst_map->items,
+                                                       ii);
+      if (instruction->fopsInfo != NULL) {
+        free(instruction->fopsInfo)
+      } else {
+        free(instruction->functionInfo);
+      }
+
+      free(instruction);
+    }
+  }
+}
+
+vfc_hashmap_t vfc_inst_table_init() 
+{
   vfc_hashmap_t map = vfc_hashmap_create();
 
   vfc_inst_table_read(map, _VFC_PROFILE_FILENAME);
@@ -298,8 +317,11 @@ vfc_hashmap_t vfc_inst_table_init() {
   return map;
 }
 
-void vfc_inst_table_quit(vfc_hashmap_t map) {
+void vfc_inst_table_quit(vfc_hashmap_t map) 
+{
   // vfc_inst_table_write(map, _VFC_PROFILE_FILENAME);
+
+  vfc_hashmap_free_struct(map);
 
   vfc_hashmap_free(map);
 
