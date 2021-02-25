@@ -89,6 +89,7 @@ void logger_error(const char *fmt, ...);
 static char *dd_exclude_path = NULL;
 static char *dd_include_path = NULL;
 static char *dd_generate_path = NULL;
+static char *vfc_exec_profile = NULL;
 
 /* Hashmap header */
 
@@ -270,6 +271,8 @@ __attribute__((constructor(0))) static void vfc_init(void) {
   } else {
     return;
   }
+
+  vfc_exec_profile = getenv("VFC_EXEC_PROFILE");
 
   // Initialize the instruction hashmap
 #ifdef COMP_PROFILE

@@ -23,6 +23,8 @@
 #define _VFC_PROFILE_FILENAME "vfc_profile.xml"
 #define _VFC_BUFFER_SIZE 256
 #define _VFC_INST_OFFSET 7
+#define _VFC_CALL_OFFSET 2
+#define _VFC_FOPS_OFFSET 3
 #define N_DATA_PER_ARG 3
 
 // return true if the file exists
@@ -76,24 +78,6 @@ void vfc_write_arg(xmlTextWriterPtr writer, interflop_arg_info_t *arg) {
 void vfc_write_call(xmlTextWriterPtr writer, interflop_function_info_t *call) {
   xmlTextWriterWriteElement(writer, "name", call->calledName);
   xmlTextWriterWriteElement(writer, "library", call->libraryName);
-
-  xmlTextWriterWriteElement(writer, "nb_input",
-                            unsigned_to_string(call->nbInput));
-
-  for (int i = 0; i < call->nbInput; i++) {
-    xmlTextWriterStartElement(writer, "input");
-    vfc_write_arg(writer, &(call->inputArgs[i]));
-    xmlTextWriterEndElement(writer);
-  }
-
-  xmlTextWriterWriteElement(writer, "nb_output",
-                            unsigned_to_string(call->nbOutput));
-
-  for (int i = 0; i < call->nbOutput; i++) {
-    xmlTextWriterStartElement(writer, "output");
-    vfc_write_arg(writer, &(call->outputArgs[i]));
-    xmlTextWriterEndElement(writer);
-  }
 }
 
 void vfc_write_fops(xmlTextWriterPtr writer, interflop_fops_info_t *fops) {
@@ -130,6 +114,24 @@ void vfc_write_instruction(xmlTextWriterPtr writer,
     vfc_write_fops(writer, instruction->fopsInfo);
   } else {
     vfc_write_call(writer, instruction->functionInfo);
+  }
+
+  xmlTextWriterWriteElement(writer, "nb_input",
+                            unsigned_to_string(instruction->nbInput));
+
+  for (int i = 0; i < instruction->nbInput; i++) {
+    xmlTextWriterStartElement(writer, "input");
+    vfc_write_arg(writer, &(instruction->inputArgs[i]));
+    xmlTextWriterEndElement(writer);
+  }
+
+  xmlTextWriterWriteElement(writer, "nb_output",
+                            unsigned_to_string(instruction->nbOutput));
+
+  for (int i = 0; i < instruction->nbOutput; i++) {
+    xmlTextWriterStartElement(writer, "output");
+    vfc_write_arg(writer, &(instruction->outputArgs[i]));
+    xmlTextWriterEndElement(writer);
   }
 
   xmlTextWriterEndElement(writer);
@@ -203,47 +205,27 @@ void vfc_init_fops(xmlNode *node, interflop_fops_info_t *fops) {
   fops->type = get_int(node->children, _VFC_INST_OFFSET);
   fops->dataType = get_int(node->children, _VFC_INST_OFFSET + 1);
   fops->vectorSize = get_int(node->children, _VFC_INST_OFFSET + 2);
-  fops->precision = get_int(node->children, _VFC_INST_OFFSET + 3);
-  fops->range = get_int(node->children, _VFC_INST_OFFSET + 4);
 }
 
 void vfc_init_call(xmlNode *node, interflop_function_info_t *call) {
   call->calledName = get_string(node->children, _VFC_INST_OFFSET);
   call->libraryName = get_string(node->children, _VFC_INST_OFFSET + 1);
-
-  call->nbInput = get_int(node->children, _VFC_INST_OFFSET + 2);
-  call->inputArgs = (call->nbInput)
-                        ? malloc(call->nbInput * sizeof(interflop_arg_info_t))
-                        : NULL;
-
-  for (int i = 0; i < call->nbInput; i++) {
-    vfc_init_args(get_node(node->children, _VFC_INST_OFFSET + 3 + i),
-                  &(call->inputArgs[i]));
-  }
-
-  call->nbOutput =
-      get_int(node->children, _VFC_INST_OFFSET + 3 + call->nbInput);
-  call->outputArgs = (call->nbOutput)
-                         ? malloc(call->nbOutput * sizeof(interflop_arg_info_t))
-                         : NULL;
-
-  for (int i = 0; i < call->nbOutput; i++) {
-    vfc_init_args(
-        get_node(node->children, _VFC_INST_OFFSET + 4 + call->nbInput + i),
-        &(call->outputArgs[i]));
-  }
 }
 
 void vfc_init_instruction(xmlNode *node,
                           interflop_instruction_info_t *instruction) {
+  unsigned vfc_total_offset = _VFC_INST_OFFSET;
+
   if (strcmp((char *)node->name, "call") == 0) {
     instruction->fopsInfo = NULL;
     instruction->functionInfo = malloc(sizeof(interflop_function_info_t));
     vfc_init_call(node, instruction->functionInfo);
+    vfc_total_offset += _VFC_CALL_OFFSET;
   } else if (strcmp((char *)node->name, "fops") == 0) {
     instruction->functionInfo = NULL;
     instruction->fopsInfo = malloc(sizeof(interflop_fops_info_t));
     vfc_init_fops(node, instruction->fopsInfo);
+    vfc_total_offset += _VFC_FOPS_OFFSET;
   } else {
     fprintf(stderr, "Unknown xml node type !\n");
   }
@@ -255,6 +237,27 @@ void vfc_init_instruction(xmlNode *node,
   instruction->column = get_int(node->children, 4);
   instruction->loopID = get_string(node->children, 5);
   instruction->depth = get_int(node->children, 6);
+
+  instruction->nbInput = get_int(node->children, vfc_total_offset);
+  instruction->inputArgs = (instruction->nbInput)
+                        ? malloc(instruction->nbInput * sizeof(interflop_arg_info_t))
+                        : NULL;
+
+  for (int i = 0; i < instruction->nbInput; i++) {
+    vfc_init_args(get_node(node->children, vfc_total_offset + 1 + i),
+                  &(instruction->inputArgs[i]));
+  }
+
+  instruction->nbOutput = get_int(node->children, vfc_total_offset + 1 + instruction->nbInput);
+  instruction->outputArgs = (instruction->nbOutput)
+                         ? malloc(instruction->nbOutput * sizeof(interflop_arg_info_t))
+                         : NULL;
+
+  for (int i = 0; i < instruction->nbOutput; i++) {
+    vfc_init_args(
+        get_node(node->children, vfc_total_offset + 2 + instruction->nbInput + i),
+        &(instruction->outputArgs[i]));
+  }
 }
 
 // Read and initialize the hashmap from the given file
@@ -297,13 +300,15 @@ void vfc_hashmap_free_struct(vfc_hashmap_t _vfc_inst_map)
       interflop_instruction_info_t *instruction =
           (interflop_instruction_info_t *)get_value_at(_vfc_inst_map->items,
                                                        ii);
+
       if (instruction->fopsInfo != NULL) {
-        free(instruction->fopsInfo)
+        free(instruction->fopsInfo);
       } else {
         free(instruction->functionInfo);
       }
 
-      free(instruction);
+      free(instruction->outputArgs);
+      free(instruction->inputArgs);
     }
   }
 }
@@ -319,7 +324,9 @@ vfc_hashmap_t vfc_inst_table_init()
 
 void vfc_inst_table_quit(vfc_hashmap_t map) 
 {
-  // vfc_inst_table_write(map, _VFC_PROFILE_FILENAME);
+  if (vfc_exec_profile != NULL){
+    vfc_inst_table_write(map, vfc_exec_profile);  
+  }
 
   vfc_hashmap_free_struct(map);
 
@@ -416,13 +423,12 @@ void vfc_exit_function(char *func_name, char *func_id, unsigned n, ...) {
   if (func_id != NULL) {
     va_list ap;
     // n is the number of arguments intercepted
-    va_start(ap, n * N_DATA_PER_ARG);
-
-    for (int i = 0; i < loaded_backends; i++)
+    for (int i = 0; i < loaded_backends; i++){
+      va_start(ap, n * N_DATA_PER_ARG);
       if (backends[i].interflop_exit_function)
         backends[i].interflop_exit_function(func_id, contexts[i], n, ap);
-
-    va_end(ap);
+      va_end(ap);
+    }
   }
 
   vfc_call_stack_pop(interflop_call_stack);

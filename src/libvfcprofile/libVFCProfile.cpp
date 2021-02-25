@@ -166,7 +166,7 @@ std::string getArgName(Function *F, Value *V, int i) {
     return "return_value";
   }
 
-  return "parameter_" + std::to_string(i + 1);
+  return "operand_" + std::to_string(i + 1);
 }
 // return the absolute path of the module
 std::string getSourceFileNameAbsPath(Module &M) {
@@ -238,6 +238,7 @@ struct VfclibProfile : public ModulePass {
   }
 
   bool mustInstrument(Instruction &I) {
+    bool isInlined = (I.getDebugLoc()) ? I.getDebugLoc().getInlinedAt() != NULL : false;
     bool isCall = isa<CallInst>(I);
 
     if (isCall) {
@@ -258,7 +259,7 @@ struct VfclibProfile : public ModulePass {
       }
     }
 
-    return (isCall || isArithmetic) && useFloat;
+    return (isCall || isArithmetic) && useFloat && !isInlined;
   }
 
   void add_instr_metadata(pt::ptree &instr, Instruction &I, Loop *L,
@@ -284,26 +285,9 @@ struct VfclibProfile : public ModulePass {
     instr.add("depth", depth);
   }
 
-  void add_fops_metadata(pt::ptree &fops, Instruction &I, Loop *L, Function &F,
-                         Module &M) {
-    unsigned vec_size = isVectorized(I);
-    bool use_float = false, use_double = false;
-    haveFloatingPointArithmetic(I, &use_float, &use_double);
-    unsigned precision = (use_float) ? 23 : 52;
-    unsigned range = (use_float) ? 8 : 11;
-
-    add_instr_metadata(fops, I, L, F, M);
-
-    fops.add("type", getFops(I));
-    fops.add("data_type", int(use_double));
-    fops.add("vector_size", vec_size);
-    fops.add("precision", precision);
-    fops.add("range", range);
-  }
-
   pt::ptree add_arg_metadata(Function *F, Value *V, int i) {
     pt::ptree arg;
-    Type *T = V->getType();
+    Type *T = (V->getType()->isVectorTy()) ? static_cast<VectorType *>(V->getType())->getElementType() : V->getType();
     Ftypes type;
     unsigned precision, range, size = 1;
 
@@ -332,11 +316,59 @@ struct VfclibProfile : public ModulePass {
 
     arg.add("name", getArgName(F, V, i));
     arg.add("size", size);
-    arg.add("type", type);
+    arg.add("data_type", type);
     arg.add("precision", precision);
     arg.add("range", range);
 
     return arg;
+  }
+
+  void add_fops_metadata(pt::ptree &fops, Instruction &I, Loop *L, Function &F,
+                         Module &M) {
+    unsigned vec_size = isVectorized(I);
+    bool use_float = false, use_double = false;
+    haveFloatingPointArithmetic(I, &use_float, &use_double);
+    unsigned precision = (use_float) ? 23 : 52;
+    unsigned range = (use_float) ? 8 : 11;
+
+    add_instr_metadata(fops, I, L, F, M);
+
+    fops.add("type", getFops(I));
+    fops.add("data_type", int(use_double));
+    fops.add("vector_size", vec_size);
+
+    unsigned input_cpt = 0, output_cpt = 0;
+    std::vector<pt::ptree> input_args, output_args;
+
+    if (mustInstrument(I.getType())) {
+      output_cpt++;
+      output_args.push_back(add_arg_metadata(&F, &I, -1));
+    }
+
+    int i = 0;
+    for (Use *U = I.op_begin(); U != I.op_end(); U++, i++) {
+      Type *arg_type = U->get()->getType();
+
+      if (mustInstrument(arg_type)) {
+        pt::ptree arg = add_arg_metadata(&F, U->get(), i);
+
+        if (arg_type == DoublePtrTy || arg_type == FloatPtrTy) {
+          output_cpt++;
+          output_args.push_back(arg);
+        }
+
+        input_cpt++;
+        input_args.push_back(arg);
+      }
+    }
+
+    fops.add("nb_input", input_cpt);
+    for (auto &input : input_args)
+      fops.add_child("input", input);
+
+    fops.add("nb_output", output_cpt);
+    for (auto &output : output_args)
+      fops.add_child("output", output);
   }
 
   void add_call_metadata(pt::ptree &call, Instruction &I, Loop *L, Function &F,

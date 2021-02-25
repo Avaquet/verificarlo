@@ -764,7 +764,7 @@ void _interflop_enter_function(char *id, void *context, int nb_args,
       unsigned argSize = va_arg(ap, unsigned);
 
       // get the arg metadata
-      interflop_arg_info_t *arg_info = &(inst_info->functionInfo->inputArgs[i]);
+      interflop_arg_info_t *arg_info = &(inst_info->inputArgs[i]);
 
       // round the arg and set the minimum and maximum values
       _vprec_round_arg(ap, 1, argType, argSize, arg_info->precision,
@@ -815,8 +815,7 @@ void _interflop_exit_function(char *id, void *context, int nb_args,
       unsigned argSize = va_arg(ap, unsigned);
 
       // get the arg metadata
-      interflop_arg_info_t *arg_info =
-          &(inst_info->functionInfo->outputArgs[i]);
+      interflop_arg_info_t *arg_info = &(inst_info->outputArgs[i]);
 
       // round the arg and set the minimum and maximum values
       _vprec_round_arg(ap, 0, argType, argSize, arg_info->precision,

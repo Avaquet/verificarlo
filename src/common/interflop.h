@@ -44,22 +44,20 @@ typedef struct interflop_arg_info {
   unsigned argSize;
   // Name of the argument
   char *argName;
+  // Minimum value
+  unsigned minValue;
+  // Maximum rounded value
+  unsigned maxValue;
+  // Mean rounded value
+  unsigned meanValue;
 } interflop_arg_info_t;
 
 /* Metadata for function calls */
 typedef struct interflop_function_info {
-  // Number of inputs
-  unsigned nbInput;
-  // Number of outputs
-  unsigned nbOutput;
   // Name of the called function
   char *calledName;
   // Name of the library (none if not from library)
   char *libraryName;
-  // Array of input args
-  interflop_arg_info_t *inputArgs;
-  // Array of ouput args
-  interflop_arg_info_t *outputArgs;
 } interflop_function_info_t;
 
 /* Metadata for floating point operations */
@@ -84,6 +82,12 @@ typedef struct interflop_instruction_info {
   unsigned column;
   // The depth of the instruction (loop depth)
   unsigned depth;
+  // Number of execution 
+  unsigned nbExec;
+  // Number of inputs
+  unsigned nbInput;
+  // Number of outputs
+  unsigned nbOutput;
   // Indicate the identifier of the instruction
   char *id;
   // The path to the file that contains the instruction
@@ -96,6 +100,10 @@ typedef struct interflop_instruction_info {
   interflop_fops_info_t *fopsInfo;
   // Pointer to the call informations (null if it is a fops)
   interflop_function_info_t *functionInfo;
+  // Array of input args
+  interflop_arg_info_t *inputArgs;
+  // Array of ouput args
+  interflop_arg_info_t *outputArgs;
 } interflop_instruction_info_t;
 
 /* Verificarlo call stack */
