@@ -271,7 +271,8 @@ struct VfclibInst : public ModulePass {
     std::vector<Function *> functions;
     for (auto &F : M.functions()) {
 
-      const std::string &name = F.getName().str();
+      const std::string &name =
+          (F.getName().str() == "vfc_main_hook") ? "main" : F.getName().str();
 
       // Included-list
       if (std::regex_match(name, includeFunctionRgx)) {
@@ -316,15 +317,15 @@ struct VfclibInst : public ModulePass {
 
   Value *setInstructionID(IRBuilder<> *Builder, Instruction *I, Function *F,
                           Module *M) {
-    DebugLoc loc = I->getDebugLoc();
-    std::string func_name = F->getName().str();
-    std::string file_name = M->getSourceFileName();
-    std::string column = std::to_string(loc.getCol());
-    std::string line = std::to_string(loc.getLine());
-
-    std::string ID = file_name + "/" + line + "/" + column;
-
-    return Builder->CreateGlobalStringPtr(ID);
+    if (I->getMetadata("VFC_PROFILE_NAME") != NULL) {
+      std::string ID =
+          cast<MDString>(I->getMetadata("VFC_PROFILE_NAME")->getOperand(0))
+              ->getString();
+      return Builder->CreateGlobalStringPtr(ID);
+    } else {
+      return ConstantPointerNull::get(
+          PointerType::get(Builder->getInt8Ty(), 0));
+    }
   }
 
   Value *replaceWithMCACall(Module &M, Instruction *I, Fops opCode) {

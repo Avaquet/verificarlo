@@ -15,7 +15,7 @@ double_arr=(1 26 51)
 float_arr=(1 11 22)
 
 for i in 0 1 2; do
-	./set_input_file vfc_profile.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
+	./set_input_file vfc_profile_test_mantissa.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=none --mode=ib"
 	printf "\n	InBound Rounding at bit of the mantissa ${double_arr[$i]} in double precision and at bit ${float_arr[$i]} in single precision\n\n" >> output.txt
 	./test_mantissa ${double_arr[$i]} ${float_arr[$i]} >> output.txt
@@ -29,7 +29,7 @@ done
 printf "\n---------------- Instrumentation = Arguments -----------------\n" >> output.txt
 
 for i in 0 1 2; do
-	./set_input_file vfc_profile.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
+	./set_input_file vfc_profile_test_mantissa.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
   export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=arguments --mode=ib"
 	printf "\n	InBound Rounding at bit of the mantissa ${double_arr[$i]} in double precision and at bit ${float_arr[$i]} in single precision\n\n" >> output.txt
 	./test_mantissa ${double_arr[$i]} ${float_arr[$i]} >> output.txt
@@ -43,8 +43,8 @@ done
 printf "\n--------------- Instrumentation = Operations -----------------\n" >> output.txt
 
 for i in 0 1 2; do
-	./set_input_file vfc_profile.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
-	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=operations --mode=ib"
+	./set_input_file vfc_profile_test_mantissa.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
+  export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=operations --mode=ib"
 	printf "\n	InBound Rounding at bit of the mantissa ${double_arr[$i]} in double precision and at bit ${float_arr[$i]} in single precision\n\n" >> output.txt
 	./test_mantissa ${double_arr[$i]} ${float_arr[$i]} >> output.txt
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=operations --mode=ob"
@@ -57,7 +57,7 @@ done
 printf "\n------------------ Instrumentation = All --------------------\n" >> output.txt
 
 for i in 0 1 2; do
-	./set_input_file vfc_profile.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
+	./set_input_file vfc_profile_test_mantissa.xml ${double_arr[$i]} 11 ${float_arr[$i]} 8 Ffloat/powf main/Fdouble main/Ffloat Fdouble/pow
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=all --mode=ib"
 	printf "\n	InBound Rounding at bit of the mantissa ${double_arr[$i]} in double precision and at bit ${float_arr[$i]} in single precision\n\n" >> output.txt
 	./test_mantissa ${double_arr[$i]} ${float_arr[$i]} >> output.txt
@@ -81,7 +81,7 @@ float_arr=(8 7)
 printf "\n------------------- Instrumentation = None -------------------\n" >> output.txt
 
 for i in 0 1; do
-	./set_input_file vfc_profile.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
+	./set_input_file vfc_profile_test_exponent.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=none --mode=ib"
 	printf "\n	InBound Rounding of the exponent at bit ${double_arr[$i]} in double precision and ${float_arr[$i]} in simple precision\n\n" >> output.txt
 	./test_exponent >> output.txt
@@ -95,7 +95,7 @@ done
 printf "\n---------------- Instrumentation = Arguments -----------------\n" >> output.txt
 
 for i in 0 1; do
-	./set_input_file vfc_profile.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
+	./set_input_file vfc_profile_test_exponent.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=arguments --mode=ib"
 	printf "\n	InBound Rounding of the exponent at bit ${double_arr[$i]} in double precision and ${float_arr[$i]} in simple precision\n\n" >> output.txt
 	./test_exponent >> output.txt
@@ -109,7 +109,7 @@ done
 printf "\n--------------- Instrumentation = Operations -----------------\n" >> output.txt
 
 for i in 0 1; do
-	./set_input_file vfc_profile.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
+	./set_input_file vfc_profile_test_exponent.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=operations --mode=ib"
 	printf "\n	InBound Rounding of the exponent at bit ${double_arr[$i]} in double precision and ${float_arr[$i]} in simple precision\n\n" >> output.txt
 	./test_exponent >> output.txt
@@ -123,7 +123,7 @@ done
 printf "\n------------------ Instrumentation = All --------------------\n" >> output.txt
 
 for i in 0 1; do
-	./set_input_file vfc_profile.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
+	./set_input_file vfc_profile_test_exponent.xml 52 ${double_arr[$i]} 23 ${float_arr[$i]} main/Fdouble main/Ffloat
 	export VFC_BACKENDS="libinterflop_vprec.so --prec-input-file=vfc_profile.xml --instrument=all --mode=ib"
 	printf "\n	InBound Rounding of the exponent at bit ${double_arr[$i]} in double precision and ${float_arr[$i]} in simple precision\n\n" >> output.txt
 	./test_exponent >> output.txt

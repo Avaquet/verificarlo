@@ -24,10 +24,8 @@
 #define __LIBVFCPROFILE_HPP__
 
 #include "../../config.h"
-#include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -43,6 +41,8 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include <string>
 
 using namespace llvm;
 
@@ -54,5 +54,7 @@ llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy;
 
 // Floating Point Ops
 enum Fops { FOP_ADD, FOP_SUB, FOP_MUL, FOP_DIV, FOP_CMP, FOP_IGNORE };
+
+std::string Fops2str[] = {"fadd", "fsub", "fmul", "fdiv", "fcmp", "fignore"};
 
 #endif

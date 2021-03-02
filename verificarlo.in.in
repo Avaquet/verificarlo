@@ -63,6 +63,7 @@ class NoPrefixParser(argparse.ArgumentParser):
 
 
 def close_tmp_files():
+    return
     for tmp in temp_files_set:
         try:
             tmp.close()
@@ -120,13 +121,16 @@ def parse_extra_args(args):
     return sources, ' '.join(options)
 
 
-def link_profile_files(sources):
-    shell('echo "<profile>" > vfc_profile.xml')
+def link_profile_files(sources, output):
+    shell('echo "<profile>" > vfc_profile_tmp.xml')
     for source in sources:
         filename = os.path.splitext(source)[0]
-        shell('tail -n +2 {source}.xml >> vfc_profile.xml'.format(
+        shell('tail -n +2 vfc_profile_{source}_tmp.xml >> vfc_profile_tmp.xml'.format(
             source=filename))
-    shell('echo "</profile>" >> vfc_profile.xml')
+        shell('rm vfc_profile_{source}_tmp.xml'.format(source=filename))
+    shell('echo "</profile>" >> vfc_profile_tmp.xml')
+    shell('cat vfc_profile_tmp.xml > vfc_profile_{output}.xml'.format(output=output))
+    shell('rm vfc_profile_tmp.xml')
 
 def shell(cmd):
     try:
@@ -141,7 +145,12 @@ def linker_mode(sources, options, output, args):
     extra_args += "-DINST_FCMP " if args.inst_fcmp else ""
     extra_args += "-DDDEBUG " if args.ddebug else ""
     extra_args += "-DINST_FUNC " if args.inst_func else ""
-    extra_args += "-DCOMP_PROFILE" if args.compile_profile else ""
+    
+    basename_output = output.split(" ")[-1]
+
+    if args.compile_profile:
+        extra_args += '-DCOMP_PROFILE=\\"vfc_profile_{output}.xml\\"'.format(output=basename_output)
+
 
     shell('{clang} -c -O3 -Wno-pointer-sign -Wno-varargs {extra_args} -o .vfcwrapper.o {vfcwrapper} -I {mcalib_includes} {libxml2_opt}'.format(
         clang=clang,
@@ -164,7 +173,7 @@ def linker_mode(sources, options, output, args):
             mcalib_options=mcalib_options)
 
     if args.compile_profile:
-        link_profile_files(sources)
+        link_profile_files(sources, basename_output)
 
     f.write(cmd)
     f.flush()
@@ -205,8 +214,10 @@ def compiler_mode(sources, options, output, args):
         ins = get_tmp_filename(basename, '.2.ll', args)
 
         compiler = linkers[args.linker]
-
-        debug = '-g'
+        
+        debug = ""
+        if args.compile_profile or args.inst_func:
+            debug = '-g'
 
         if is_object(source):
             continue
@@ -246,12 +257,13 @@ def compiler_mode(sources, options, output, args):
         if args.inst_fcmp:
             extra_args += "-vfclibinst-inst-fcmp "
 
-        if args.compile_profile:
+        if args.compile_profile or args.inst_func:
             # Apply profile generation pass
-            shell('{opt} -S  -load {libvfcprofile} -vfclibprofile {ir} -o /dev/null > {basename}.xml '.format(
+            shell('{opt} -S  -load {libvfcprofile} -vfclibprofile {extra_args} {selectfunction} {ir} -o {ir} > vfc_profile_{basename}_tmp.xml '.format(
                 opt=opt,
                 libvfcprofile=libvfcprofile,
                 extra_args=extra_args,
+                selectfunction=selectfunction,
                 ir=ir.name,
                 ins=ins.name,
                 basename=basename

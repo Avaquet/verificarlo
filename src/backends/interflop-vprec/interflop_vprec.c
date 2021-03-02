@@ -559,7 +559,12 @@ static inline float _vprec_binary32_binary_op(float a, float b,
                                               const vprec_operation op,
                                               char *id, void *context) {
   float res = 0;
-  unsigned precision, range;
+  unsigned precision_a = VPRECLIB_BINARY32_PRECISION;
+  unsigned precision_b = VPRECLIB_BINARY32_PRECISION;
+  unsigned precision_res = VPRECLIB_BINARY32_PRECISION;
+  unsigned range_a = VPRECLIB_BINARY32_RANGE;
+  unsigned range_b = VPRECLIB_BINARY32_RANGE;
+  unsigned range_res = VPRECLIB_BINARY32_RANGE;
 
   if (_vfc_inst_map != NULL) {
     // if the internal operations should not be rounded
@@ -582,23 +587,23 @@ static inline float _vprec_binary32_binary_op(float a, float b,
       logger_error("The fops %s cannot be found in the map", id);
     }
 
-    precision = inst_info->fopsInfo->precision;
-    range = inst_info->fopsInfo->range;
-
-  } else {
-    precision = VPRECLIB_BINARY32_PRECISION;
-    range = VPRECLIB_BINARY32_RANGE;
+    precision_a = inst_info->inputArgs[0].precision;
+    precision_b = inst_info->inputArgs[1].precision;
+    precision_res = inst_info->outputArgs[0].precision;
+    range_a = inst_info->inputArgs[0].range;
+    range_b = inst_info->inputArgs[1].range;
+    range_res = inst_info->outputArgs[0].range;
   }
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) {
-    a = _vprec_round_binary32(a, 1, context, range, precision);
-    b = _vprec_round_binary32(b, 1, context, range, precision);
+    a = _vprec_round_binary32(a, 1, context, range_a, precision_b);
+    b = _vprec_round_binary32(b, 1, context, range_b, precision_b);
   }
 
   perform_binary_op(op, res, a, b);
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) {
-    res = _vprec_round_binary32(res, 0, context, range, precision);
+    res = _vprec_round_binary32(res, 0, context, range_res, precision_res);
   }
 
   return res;
@@ -608,7 +613,12 @@ static inline double _vprec_binary64_binary_op(double a, double b,
                                                const vprec_operation op,
                                                char *id, void *context) {
   double res = 0;
-  unsigned precision, range;
+  unsigned precision_a = VPRECLIB_BINARY64_PRECISION;
+  unsigned precision_b = VPRECLIB_BINARY64_PRECISION;
+  unsigned precision_res = VPRECLIB_BINARY64_PRECISION;
+  unsigned range_a = VPRECLIB_BINARY64_RANGE;
+  unsigned range_b = VPRECLIB_BINARY64_RANGE;
+  unsigned range_res = VPRECLIB_BINARY64_RANGE;
 
   if (_vfc_inst_map != NULL) {
     // if the internal operations should not be rounded
@@ -631,22 +641,23 @@ static inline double _vprec_binary64_binary_op(double a, double b,
       logger_error("The fops %s cannot be found in the map", id);
     }
 
-    precision = inst_info->fopsInfo->precision;
-    range = inst_info->fopsInfo->range;
-  } else {
-    precision = VPRECLIB_BINARY64_PRECISION;
-    range = VPRECLIB_BINARY64_RANGE;
+    precision_a = inst_info->inputArgs[0].precision;
+    precision_b = inst_info->inputArgs[1].precision;
+    precision_res = inst_info->outputArgs[0].precision;
+    range_a = inst_info->inputArgs[0].range;
+    range_b = inst_info->inputArgs[1].range;
+    range_res = inst_info->outputArgs[0].range;
   }
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ib)) {
-    a = _vprec_round_binary64(a, 1, context, range, precision);
-    b = _vprec_round_binary64(b, 1, context, range, precision);
+    a = _vprec_round_binary64(a, 1, context, range_a, precision_a);
+    b = _vprec_round_binary64(b, 1, context, range_b, precision_b);
   }
 
   perform_binary_op(op, res, a, b);
 
   if ((VPRECLIB_MODE == vprecmode_full) || (VPRECLIB_MODE == vprecmode_ob)) {
-    res = _vprec_round_binary64(res, 0, context, range, precision);
+    res = _vprec_round_binary64(res, 0, context, range_res, precision_res);
   }
 
   return res;

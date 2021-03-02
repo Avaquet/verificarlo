@@ -64,39 +64,26 @@ for fops in tree.iter("fops"):
     CurrentFunction = fops[2].text
     
     if CurrentFunction in FunctionsList:
-        if fops[8].text == '0' or fops[8].text == '2':
-            fops[10].text = str(PrecFloat[0])
-            fops[11].text = str(RangeFloat[0])
-        elif fops[8].text == '1' or fops[8].text == '3':
-            fops[10].text = str(PrecDouble[0])
-            fops[11].text = str(RangeDouble[0])
+        nb_in = int(fops[10].text)
+        nb_out = int(fops[11+nb_in].text)
+       
+        for i in range(11,11+nb_in):
+            arg = fops[i]
+            if arg[2].text == '0' or arg[2].text == '2':
+                arg[3].text = str(PrecFloat[0])
+                arg[4].text = str(RangeFloat[0])
+            elif arg[2].text == '1' or arg[2].text == '3':
+                arg[3].text = str(PrecDouble[0])
+                arg[4].text = str(RangeDouble[0])
 
-"""
-        function[5].text = str(PrecDouble[0])
-        function[6].text = str(RangeDouble[0])
-        function[7].text = str(PrecFloat[0])
-        function[8].text = str(RangeFloat[0])
+        
+        for i in range(12+nb_in, 12+nb_in+nb_out):
+            arg = fops[i]
+            if arg[2].text == '0' or arg[2].text == '0':
+                arg[3].text = str(PrecFloat[0])
+                arg[4].text = str(RangeFloat[0])
+            elif arg[2].text == '1' or arg[2].text == '3':
+                arg[3].text = str(PrecDouble[0])
+                arg[4].text = str(RangeDouble[0])
 
-        for arg in function.iter("input"):
-            if arg[1].text == '0':
-                arg[2].text = str(PrecFloat[0])
-                arg[3].text = str(RangeFloat[0])
-            elif arg[1].text == '1':
-                arg[2].text = str(PrecDouble[0])
-                arg[3].text = str(RangeDouble[0])
-            else:
-                print("Unknow Argument type")
-                exit(0)
-    
-        for arg in function.iter("output"):
-            if arg[1].text == '0':
-                arg[2].text = str(PrecFloat[0])
-                arg[3].text = str(RangeFloat[0])
-            elif arg[1].text == '1':
-                arg[2].text = str(PrecDouble[0])
-                arg[3].text = str(RangeDouble[0])
-            else:
-                print("Unknow Argument type")
-                exit(0)
-        """
 tree.write(InputFileName)

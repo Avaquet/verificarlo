@@ -42,9 +42,9 @@
 #include "../../common/float_utils.h"
 #include "../../common/interflop.h"
 #include "../../common/logger.h"
-#include "../../common/vfc_hashmap.h"
 #include "../../common/options.h"
 #include "../../common/tinymt64.h"
+#include "../../common/vfc_hashmap.h"
 
 #include "../../common/float_const.h"
 #include "../../common/tinymt64.h"
@@ -90,7 +90,7 @@ static inline double _noise_binary64(const int exp) {
 /* cancell: detects the cancellation size; and checks if its larger than the
  * chosen tolerance. It reports a warning to the user and adds a MCA noise of
  * the magnitude of the cancelled bits. */
-#define cancell(X, Y, Z, file, line, column)                                   \
+#define cancell(X, Y, Z)                                                       \
   ({                                                                           \
     const int32_t e_z = GET_EXP_FLT(*Z);                                       \
     /* computes the difference between the max of both operands and the        \
@@ -98,7 +98,7 @@ static inline double _noise_binary64(const int exp) {
     int cancellation = max(GET_EXP_FLT(X), GET_EXP_FLT(Y)) - e_z;              \
     if (cancellation >= TOLERANCE) {                                           \
       if (WARN) {                                                              \
-        logger_info("cancellation of size %d detected in %s at line %u column %u\n", cancellation, file, line, column);       \
+        logger_info("cancellation of size %d detected\n", cancellation);       \
       }                                                                        \
       /* Add an MCA noise of the magnitude of cancelled bits.                  \
        * This particular version in the case of cancellations does not use     \
@@ -112,85 +112,25 @@ static inline double _noise_binary64(const int exp) {
 static void _interflop_add_float(float a, float b, float *c, char *id,
                                  void *context) {
   *c = a + b;
-
-  if (id != NULL && _vfc_inst_map != NULL){
-    // get the fops metadata
-    interflop_instruction_info_t *inst_info =
-        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
-
-    // if the operation is not identified
-    if (inst_info == NULL || inst_info->fopsInfo == NULL) {
-      logger_error("The fops %s cannot be found in the map", id);
-    }
-    
-    cancell(a, b, c, inst_info->filePath, inst_info->line, inst_info->column);
-          
-  }else{
-    cancell(a, b, c, "unknown location", 0, 0);
-  } 
+  cancell(a, b, c);
 }
 
 static void _interflop_sub_float(float a, float b, float *c, char *id,
                                  void *context) {
   *c = a - b;
- 
-  if (id != NULL && _vfc_inst_map != NULL){
-    // get the fops metadata
-    interflop_instruction_info_t *inst_info =
-        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
-
-    // if the operation is not identified
-    if (inst_info == NULL || inst_info->fopsInfo == NULL) {
-      logger_error("The fops %s cannot be found in the map", id);
-    }
-    
-    cancell(a, b, c, inst_info->filePath, inst_info->line, inst_info->column);
-          
-  }else{
-    cancell(a, b, c, "unknown location", 0, 0);
-  } 
+  cancell(a, b, c);
 }
 
 static void _interflop_add_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = a + b;
-  
-  if (id != NULL && _vfc_inst_map != NULL){
-    // get the fops metadata
-    interflop_instruction_info_t *inst_info =
-        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
-
-    // if the operation is not identified
-    if (inst_info == NULL || inst_info->fopsInfo == NULL) {
-      logger_error("The fops %s cannot be found in the map", id);
-    }
-    
-    cancell(a, b, c, inst_info->filePath, inst_info->line, inst_info->column);
-          
-  }else{
-    cancell(a, b, c, "unknown location", 0, 0);
-  } 
+  cancell(a, b, c);
 }
 
 static void _interflop_sub_double(double a, double b, double *c, char *id,
                                   void *context) {
   *c = a - b;
-  
-  if (id != NULL && _vfc_inst_map != NULL){
-    // get the fops metadata
-    interflop_instruction_info_t *inst_info =
-        vfc_hashmap_get(_vfc_inst_map, vfc_hashmap_str_function(id));
-
-    // if the operation is not identified
-    if (inst_info == NULL || inst_info->fopsInfo == NULL) {
-      logger_error("The fops %s cannot be found in the map", id);
-    }
-    
-    cancell(a, b, c, inst_info->filePath, inst_info->line, inst_info->column);
-          
-  }else{
-    cancell(a, b, c, "unknown location", 0, 0);
-  } 
+  cancell(a, b, c);
 }
 
 static void _interflop_mul_float(float a, float b, float *c, char *id,

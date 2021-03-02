@@ -137,6 +137,10 @@ static inline bool _is_representable_binary128(const __float128 x,
 
 /* Returns the unbiased exponent of the binary32 f */
 static inline int32_t _get_exponent_binary32(const float f) {
+  if (f == 0.0) {
+    return 0;
+  }
+
   binary32 x = {.f32 = f};
   /* Substracts the bias */
   return x.ieee.exponent - FLOAT_EXP_COMP;
@@ -144,6 +148,10 @@ static inline int32_t _get_exponent_binary32(const float f) {
 
 /* Returns the unbiased exponent of the binary64 d */
 static inline int32_t _get_exponent_binary64(const double d) {
+  if (d == 0.0) {
+    return 0;
+  }
+
   binary64 x = {.f64 = d};
   /* Substracts the bias */
   return x.ieee.exponent - DOUBLE_EXP_COMP;
@@ -151,6 +159,10 @@ static inline int32_t _get_exponent_binary64(const double d) {
 
 /* Returns the unbiased exponent of the binary128 q */
 static inline int32_t _get_exponent_binary128(const __float128 q) {
+  if (q == 0.0) {
+    return 0;
+  }
+
   binary128 x = {.f128 = q};
   /* Substracts the bias */
   return x.ieee.exponent - QUAD_EXP_COMP;
@@ -182,15 +194,31 @@ static inline __float128 _fast_pow2_binary128(const int exp) {
 
 // Return the number of the last set bit of a
 static inline int __lsb64(double a) {
-  union {long int i; double f;} u;
+  if (a == 0) {
+    return GET_PMAN_SIZE(a);
+  }
+
+  union {
+    long int i;
+    double f;
+  } u;
   u.f = a;
+
   return GET_PMAN_SIZE(a) - log2(u.i & (-u.i)) + 1;
 }
 
 // Return the number of the last set bit of a
 static inline int __lsb32(float a) {
-  union {int i; float f;} u;
+  if (a == 0) {
+    return GET_PMAN_SIZE(a);
+  }
+
+  union {
+    int i;
+    float f;
+  } u;
   u.f = a;
+
   return GET_PMAN_SIZE(a) - log2f(u.i & (-u.i)) + 1;
 }
 
@@ -201,12 +229,10 @@ static inline int __lsb32(float a) {
            : _get_exponent_binary64, __float128                                \
            : _get_exponent_binary128)(X)
 
-/* Generic call for get last set bit */
-#define GET_LSB(X)                                                             \
-  _Generic(X, float : __lsb32(X), double : __lsb64(X))
+/* Generic call to get last set bit */
+#define GET_LSB(X) _Generic(X, float : __lsb32(X), double : __lsb64(X))
 
-/* Generic call for get last set bit */
-#define GET_FABS(X)                                                             \
-  _Generic(X, float : fabsf(X), double : fabs(X))
+/* Generic call to get last set bit */
+#define GET_FABS(X) _Generic(X, float : fabsf(X), double : fabs(X))
 
 #endif /* __FLOAT_UTILS_H__ */

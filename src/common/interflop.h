@@ -68,10 +68,21 @@ typedef struct interflop_fops_info {
   enum FTYPES dataType;
   // Size of the vector (1 without vectorization)
   unsigned vectorSize;
-  // Mantissa length in bit
-  unsigned precision;
-  // Exponent length in bit
-  unsigned range;
+  /* Cancellation */
+  unsigned minCancellation;
+  unsigned maxCancellation;
+  unsigned sumCancellation;
+  unsigned nbCancellation;
+  /* Absorption */
+  unsigned minAbsorption;
+  unsigned maxAbsorption;
+  unsigned sumAbsorption;
+  unsigned nbAbsorption;
+  /* Roundoff */
+  unsigned minRoundoff;
+  unsigned maxRoundoff;
+  unsigned sumRoundoff;
+  unsigned nbRoundoff;
 } interflop_fops_info_t;
 
 /* Metadata for instructions */
@@ -82,7 +93,7 @@ typedef struct interflop_instruction_info {
   unsigned column;
   // The depth of the instruction (loop depth)
   unsigned depth;
-  // Number of execution 
+  // Number of execution
   unsigned nbExec;
   // Number of inputs
   unsigned nbInput;

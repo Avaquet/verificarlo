@@ -30,6 +30,8 @@
 #include <cxxabi.h>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <regex>
 #include <set>
 #include <stdio.h>
 #include <string>
@@ -40,6 +42,21 @@
 
 using namespace llvm;
 namespace pt = boost::property_tree;
+
+static cl::opt<std::string>
+    VfclibInstFunction("vfclibinst-function",
+                       cl::desc("Only instrument given FunctionName"),
+                       cl::value_desc("FunctionName"), cl::init(""));
+
+static cl::opt<std::string> VfclibInstIncludeFile(
+    "vfclibinst-include-file",
+    cl::desc("Only instrument modules / functions in file IncludeNameFile "),
+    cl::value_desc("IncludeNameFile"), cl::init(""));
+
+static cl::opt<std::string> VfclibInstExcludeFile(
+    "vfclibinst-exclude-file",
+    cl::desc("Do not instrument modules / functions in file ExcludeNameFile "),
+    cl::value_desc("ExcludeNameFile"), cl::init(""));
 
 namespace {
 
@@ -217,6 +234,7 @@ const TargetLibraryInfo &getTLI(Function *f) {
 struct VfclibProfile : public ModulePass {
   static char ID;
   pt::ptree profile;
+  unsigned instr_cpt;
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
@@ -224,7 +242,7 @@ struct VfclibProfile : public ModulePass {
     AU.addRequired<LoopInfoWrapperPass>();
   }
 
-  VfclibProfile() : ModulePass(ID) {}
+  VfclibProfile() : ModulePass(ID) { instr_cpt = 0; }
 
   bool mustInstrument(Type *T) {
     if (T->isPointerTy()) {
@@ -238,7 +256,6 @@ struct VfclibProfile : public ModulePass {
   }
 
   bool mustInstrument(Instruction &I) {
-    bool isInlined = (I.getDebugLoc()) ? I.getDebugLoc().getInlinedAt() != NULL : false;
     bool isCall = isa<CallInst>(I);
 
     if (isCall) {
@@ -259,24 +276,33 @@ struct VfclibProfile : public ModulePass {
       }
     }
 
-    return (isCall || isArithmetic) && useFloat && !isInlined;
+    return (isCall || isArithmetic) && useFloat;
   }
 
   void add_instr_metadata(pt::ptree &instr, Instruction &I, Loop *L,
                           Function &F, Module &M) {
     DebugLoc loc = I.getDebugLoc();
+
     std::string func_name = F.getName().str();
     std::string loop_id = (L) ? func_name +
                                     std::to_string(L->getStartLoc().getLine()) +
                                     std::to_string(L->getLoopDepth())
                               : "none";
+
     std::string file_name = M.getSourceFileName();
-    unsigned column = loc.getCol();
-    unsigned line = loc.getLine();
+
+    unsigned column = (loc) ? loc.getCol() : 0;
+    unsigned line = (loc) ? loc.getLine() : 0;
     unsigned depth = (L) ? L->getLoopDepth() : 0;
 
-    instr.add("id", file_name + "/" + std::to_string(line) + "/" +
-                        std::to_string(column));
+    std::string id =
+        file_name + "/" + func_name + "/" + std::to_string(instr_cpt++);
+
+    LLVMContext &C = I.getContext();
+    MDNode *N = MDNode::get(C, MDString::get(C, id));
+    I.setMetadata("VFC_PROFILE_NAME", N);
+
+    instr.add("id", id);
     instr.add("filepath", getSourceFileNameAbsPath(M));
     instr.add("function", func_name);
     instr.add("line", line);
@@ -287,7 +313,9 @@ struct VfclibProfile : public ModulePass {
 
   pt::ptree add_arg_metadata(Function *F, Value *V, int i) {
     pt::ptree arg;
-    Type *T = (V->getType()->isVectorTy()) ? static_cast<VectorType *>(V->getType())->getElementType() : V->getType();
+    Type *T = (V->getType()->isVectorTy())
+                  ? static_cast<VectorType *>(V->getType())->getElementType()
+                  : V->getType();
     Ftypes type;
     unsigned precision, range, size = 1;
 
@@ -417,11 +445,149 @@ struct VfclibProfile : public ModulePass {
       call.add_child("output", output);
   }
 
+  // https://thispointer.com/find-and-replace-all-occurrences-of-a-sub-string-in-c/
+  void findAndReplaceAll(std::string &data, std::string toSearch,
+                         std::string replaceStr) {
+    // Get the first occurrence
+    size_t pos = data.find(toSearch);
+    // Repeat till end is reached
+    while (pos != std::string::npos) {
+      // Replace this occurrence of Sub String
+      data.replace(pos, toSearch.size(), replaceStr);
+      // Get the next occurrence from the current position
+      pos = data.find(toSearch, pos + replaceStr.size());
+    }
+  }
+
+  void escape_regex(std::string &str) {
+    findAndReplaceAll(str, ".", "\\.");
+    // ECMAScript needs .* instead of * for matching any charactere
+    // http://www.cplusplus.com/reference/regex/ECMAScript/
+    findAndReplaceAll(str, "*", ".*");
+  }
+
+  std::regex parseFunctionSetFile(Module &M, cl::opt<std::string> &fileName) {
+    // Skip if empty fileName
+    if (fileName.empty()) {
+      return std::regex("");
+    }
+
+    // Open File
+    std::ifstream loopstream(fileName.c_str());
+    if (!loopstream.is_open()) {
+      errs() << "Cannot open " << fileName << "\n";
+      report_fatal_error("libVFCInstrument fatal error");
+    }
+
+    // Parse File, if module name matches, add function to FunctionSet
+    int lineno = 0;
+    std::string line;
+
+    // return the absolute path of the source file
+    std::string moduleName = getSourceFileNameAbsPath(M);
+    moduleName = (moduleName.empty()) ? M.getModuleIdentifier() : moduleName;
+
+    // Regex that contains all regex for each function
+    std::string moduleRegex = "";
+
+    while (std::getline(loopstream, line)) {
+      lineno++;
+      StringRef l = StringRef(line);
+
+      // Ignore empty or commented lines
+      if (l.startswith("#") || l.trim() == "") {
+        continue;
+      }
+      std::pair<StringRef, StringRef> p = l.split(" ");
+
+      if (p.second.equals("")) {
+        errs() << "Syntax error in exclusion/inclusion file " << fileName << ":"
+               << lineno << "\n";
+        report_fatal_error("libVFCInstrument fatal error");
+      } else {
+        std::string mod = p.first.trim();
+        std::string fun = p.second.trim();
+
+        // If mod is not an absolute path,
+        // we search any module containing mod
+        if (sys::path::is_relative(mod)) {
+          mod = "*" + sys::path::get_separator().str() + mod;
+        }
+        // If the user does not specify extension for the module
+        // we match any extension
+        if (not sys::path::has_extension(mod)) {
+          mod += ".*";
+        }
+
+        escape_regex(mod);
+        escape_regex(fun);
+
+        if (std::regex_match(moduleName, std::regex(mod))) {
+          moduleRegex += fun + "|";
+        }
+      }
+    }
+
+    loopstream.close();
+    // Remove the extra | at the end
+    if (not moduleRegex.empty()) {
+      moduleRegex.pop_back();
+    }
+    return std::regex(moduleRegex);
+  }
+
+  bool isIncluded(Instruction &I, std::regex &includeFunctionRgx,
+                  std::regex &excludeFunctionRgx) {
+    std::string func_name;
+    std::string called_name;
+
+    if (isa<CallInst>(&I)) {
+      CallInst *call = cast<CallInst>(&I);
+      called_name = call->getCalledFunction()->getName().str();
+    }
+
+    func_name = I.getFunction()->getName().str();
+
+    // Included-list
+    if ((!called_name.empty() &&
+         std::regex_match(called_name, includeFunctionRgx)) ||
+        std::regex_match(func_name, includeFunctionRgx)) {
+      return true;
+    }
+
+    // Excluded-list
+    if ((!called_name.empty() &&
+         std::regex_match(called_name, excludeFunctionRgx)) ||
+        std::regex_match(func_name, excludeFunctionRgx)) {
+      return false;
+    }
+
+    // If excluded-list is empty and included-list is not, we are done
+    if (VfclibInstExcludeFile.empty() and not VfclibInstIncludeFile.empty()) {
+      return false;
+    }
+
+    return true;
+  }
+
   virtual bool runOnModule(Module &M) {
+    // initialize common types
     FloatTy = Type::getFloatTy(M.getContext());
     FloatPtrTy = Type::getFloatPtrTy(M.getContext());
     DoubleTy = Type::getDoubleTy(M.getContext());
     DoublePtrTy = Type::getDoublePtrTy(M.getContext());
+
+    // Parse both included and excluded function set
+    std::regex includeFunctionRgx =
+        parseFunctionSetFile(M, VfclibInstIncludeFile);
+    std::regex excludeFunctionRgx =
+        parseFunctionSetFile(M, VfclibInstExcludeFile);
+
+    // Parse instrument single function option (--function)
+    if (not VfclibInstFunction.empty()) {
+      includeFunctionRgx = std::regex(VfclibInstFunction);
+      excludeFunctionRgx = std::regex(".*");
+    }
 
     /*************************************************************************
      *                    Create Instrumentation Profile                     *
@@ -433,11 +599,15 @@ struct VfclibProfile : public ModulePass {
 
       LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
 
+      instr_cpt = 0;
       for (auto &B : F) {
         Loop *L = LI.getLoopFor(&B);
 
         for (auto &I : B) {
-          if (mustInstrument(I)) {
+          // if the instruction is a call to an included function
+          // or if the instruction is in an included function
+          if (mustInstrument(I) &&
+              isIncluded(I, includeFunctionRgx, excludeFunctionRgx)) {
             pt::ptree instruction;
 
             if (isa<CallInst>(I)) {
@@ -456,7 +626,7 @@ struct VfclibProfile : public ModulePass {
         std::cout, profile,
         boost::property_tree::xml_writer_make_settings<std::string>('\t', 1));
 
-    return false;
+    return true;
   }
 }; // namespace
 
