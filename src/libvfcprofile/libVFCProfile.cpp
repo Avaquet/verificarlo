@@ -1,4 +1,4 @@
-/******************************************************************************
+/*****************************************************************************
  *                                                                            *
  *  This file is part of Verificarlo.                                         *
  *                                                                            *
@@ -231,6 +231,477 @@ const TargetLibraryInfo &getTLI(Function *f) {
 #endif
 }
 
+bool mustInstrument(Type *T) {
+  if (T->isPointerTy()) {
+    T = T->getPointerElementType();
+  } else if (T->isVectorTy()) {
+    VectorType *t = static_cast<VectorType *>(T);
+    T = t->getElementType();
+  }
+
+  return T->isFloatTy() || T->isDoubleTy();
+}
+
+bool mustInstrument(Instruction &I) {
+  bool isCall = isa<CallInst>(I);
+
+  if (isCall) {
+    Function *calledFunction = cast<CallInst>(I).getCalledFunction();
+    isCall = !(calledFunction == NULL || calledFunction->isIntrinsic());
+  }
+
+  bool isArithmetic = getFops(I) != FOP_IGNORE;
+  bool useFloat = false;
+
+  if (mustInstrument(I.getType())) {
+    useFloat = true;
+  }
+
+  for (Use *U = I.op_begin(); U != I.op_end(); U++) {
+    if (mustInstrument(U->get()->getType())) {
+      useFloat = true;
+    }
+  }
+
+  return (isCall || isArithmetic) && useFloat;
+}
+
+void add_instr_metadata(unsigned &instr_cpt, pt::ptree &instr, Instruction &I,
+                        Loop *L, Function &F, Module &M) {
+  DebugLoc loc = I.getDebugLoc();
+
+  std::string func_name = F.getName().str();
+  std::string loop_id = (L) ? func_name +
+                                  std::to_string(L->getStartLoc().getLine()) +
+                                  std::to_string(L->getLoopDepth())
+                            : "none";
+
+  std::string file_name = M.getSourceFileName();
+
+  unsigned column = (loc) ? loc.getCol() : 0;
+  unsigned line = (loc) ? loc.getLine() : 0;
+  unsigned depth = (L) ? L->getLoopDepth() : 0;
+
+  std::string id =
+      file_name + "/" + func_name + "/" + std::to_string(instr_cpt++);
+
+  LLVMContext &C = I.getContext();
+  MDNode *N = MDNode::get(C, MDString::get(C, id));
+  I.setMetadata("VFC_PROFILE_NAME", N);
+
+  instr.add("id", id);
+  instr.add("filepath", getSourceFileNameAbsPath(M));
+  instr.add("function", func_name);
+  instr.add("line", line);
+  instr.add("column", column);
+  instr.add("loop", loop_id);
+  instr.add("depth", depth);
+}
+
+pt::ptree add_arg_metadata(Function *F, Value *V, int i) {
+  pt::ptree arg;
+  Type *T = (V->getType()->isVectorTy())
+                ? static_cast<VectorType *>(V->getType())->getElementType()
+                : V->getType();
+  Ftypes type;
+  unsigned precision, range, size = 1;
+
+  if (FloatTy == T) {
+    type = FLOAT;
+    precision = 23;
+    range = 8;
+  } else if (FloatPtrTy == T) {
+    type = FLOAT_PTR;
+    precision = 23;
+    range = 8;
+    size = getSizeOf(V, F);
+  } else if (DoubleTy == T) {
+    type = DOUBLE;
+    precision = 52;
+    range = 11;
+  } else if (DoublePtrTy == T) {
+    type = DOUBLE_PTR;
+    precision = 52;
+    range = 11;
+    size = getSizeOf(V, F);
+  } else {
+    V->getType()->print(errs());
+    std::cerr << " Arg type not suported" << std::endl;
+  }
+
+  arg.add("name", getArgName(F, V, i));
+  arg.add("size", size);
+  arg.add("data_type", type);
+  arg.add("precision", precision);
+  arg.add("range", range);
+
+  return arg;
+}
+
+void add_fops_metadata(unsigned &instr_cpt, pt::ptree &fops, Instruction &I,
+                       Loop *L, Function &F, Module &M) {
+  unsigned vec_size = isVectorized(I);
+  bool use_float = false, use_double = false;
+  haveFloatingPointArithmetic(I, &use_float, &use_double);
+  unsigned precision = (use_float) ? 23 : 52;
+  unsigned range = (use_float) ? 8 : 11;
+
+  add_instr_metadata(instr_cpt, fops, I, L, F, M);
+
+  fops.add("type", getFops(I));
+  fops.add("data_type", int(use_double));
+  fops.add("vector_size", vec_size);
+
+  unsigned input_cpt = 0, output_cpt = 0;
+  std::vector<pt::ptree> input_args, output_args;
+
+  if (mustInstrument(I.getType())) {
+    output_cpt++;
+    output_args.push_back(add_arg_metadata(&F, &I, -1));
+  }
+
+  int i = 0;
+  for (Use *U = I.op_begin(); U != I.op_end(); U++, i++) {
+    Type *arg_type = U->get()->getType();
+
+    if (mustInstrument(arg_type)) {
+      pt::ptree arg = add_arg_metadata(&F, U->get(), i);
+
+      if (arg_type == DoublePtrTy || arg_type == FloatPtrTy) {
+        output_cpt++;
+        output_args.push_back(arg);
+      }
+
+      input_cpt++;
+      input_args.push_back(arg);
+    }
+  }
+
+  fops.add("nb_input", input_cpt);
+  for (auto &input : input_args)
+    fops.add_child("input", input);
+
+  fops.add("nb_output", output_cpt);
+  for (auto &output : output_args)
+    fops.add_child("output", output);
+}
+
+void add_call_metadata(unsigned &instr_cpt, pt::ptree &call, Instruction &I,
+                       Loop *L, Function &F, Module &M) {
+  LibFunc libfunc;
+  const TargetLibraryInfo &TLI = getTLI(&F);
+  bool is_from_library = TLI.getLibFunc(F.getName(), libfunc);
+  std::string library_name =
+      (is_from_library) ? TLI.getName(libfunc).str() : "none";
+  unsigned input_cpt = 0, output_cpt = 0;
+  std::vector<pt::ptree> input_args, output_args;
+
+  if (mustInstrument(I.getType())) {
+    output_cpt++;
+    output_args.push_back(add_arg_metadata(&F, &I, -1));
+  }
+
+  int i = 0;
+  for (Use *U = I.op_begin(); U != I.op_end(); U++, i++) {
+    Type *arg_type = U->get()->getType();
+
+    if (mustInstrument(arg_type)) {
+      pt::ptree arg = add_arg_metadata(&F, U->get(), i);
+
+      if (arg_type == DoublePtrTy || arg_type == FloatPtrTy) {
+        output_cpt++;
+        output_args.push_back(arg);
+      }
+
+      input_cpt++;
+      input_args.push_back(arg);
+    }
+  }
+
+  add_instr_metadata(instr_cpt, call, I, L, F, M);
+
+  call.add("name", cast<CallInst>(I).getCalledFunction()->getName().str());
+  call.add("library", library_name);
+
+  call.add("nb_input", input_cpt);
+  for (auto &input : input_args)
+    call.add_child("input", input);
+
+  call.add("nb_output", output_cpt);
+  for (auto &output : output_args)
+    call.add_child("output", output);
+}
+
+// https://thispointer.com/find-and-replace-all-occurrences-of-a-sub-string-in-c/
+void findAndReplaceAll(std::string &data, std::string toSearch,
+                       std::string replaceStr) {
+  // Get the first occurrence
+  size_t pos = data.find(toSearch);
+  // Repeat till end is reached
+  while (pos != std::string::npos) {
+    // Replace this occurrence of Sub String
+    data.replace(pos, toSearch.size(), replaceStr);
+    // Get the next occurrence from the current position
+    pos = data.find(toSearch, pos + replaceStr.size());
+  }
+}
+
+void escape_regex(std::string &str) {
+  findAndReplaceAll(str, ".", "\\.");
+  // ECMAScript needs .* instead of * for matching any charactere
+  // http://www.cplusplus.com/reference/regex/ECMAScript/
+  findAndReplaceAll(str, "*", ".*");
+}
+
+std::regex parseFunctionSetFile(Module &M, cl::opt<std::string> &fileName) {
+  // Skip if empty fileName
+  if (fileName.empty()) {
+    return std::regex("");
+  }
+
+  // Open File
+  std::ifstream loopstream(fileName.c_str());
+  if (!loopstream.is_open()) {
+    errs() << "Cannot open " << fileName << "\n";
+    report_fatal_error("libVFCInstrument fatal error");
+  }
+
+  // Parse File, if module name matches, add function to FunctionSet
+  int lineno = 0;
+  std::string line;
+
+  // return the absolute path of the source file
+  std::string moduleName = getSourceFileNameAbsPath(M);
+  moduleName = (moduleName.empty()) ? M.getModuleIdentifier() : moduleName;
+
+  // Regex that contains all regex for each function
+  std::string moduleRegex = "";
+
+  while (std::getline(loopstream, line)) {
+    lineno++;
+    StringRef l = StringRef(line);
+
+    // Ignore empty or commented lines
+    if (l.startswith("#") || l.trim() == "") {
+      continue;
+    }
+    std::pair<StringRef, StringRef> p = l.split(" ");
+
+    if (p.second.equals("")) {
+      errs() << "Syntax error in exclusion/inclusion file " << fileName << ":"
+             << lineno << "\n";
+      report_fatal_error("libVFCInstrument fatal error");
+    } else {
+      std::string mod = p.first.trim();
+      std::string fun = p.second.trim();
+
+      // If mod is not an absolute path,
+      // we search any module containing mod
+      if (sys::path::is_relative(mod)) {
+        mod = "*" + sys::path::get_separator().str() + mod;
+      }
+      // If the user does not specify extension for the module
+      // we match any extension
+      if (not sys::path::has_extension(mod)) {
+        mod += ".*";
+      }
+
+      escape_regex(mod);
+      escape_regex(fun);
+
+      if (std::regex_match(moduleName, std::regex(mod))) {
+        moduleRegex += fun + "|";
+      }
+    }
+  }
+
+  loopstream.close();
+  // Remove the extra | at the end
+  if (not moduleRegex.empty()) {
+    moduleRegex.pop_back();
+  }
+  return std::regex(moduleRegex);
+}
+
+bool isIncluded(Instruction &I, std::regex &includeFunctionRgx,
+                std::regex &excludeFunctionRgx) {
+  std::string func_name;
+  std::string called_name;
+
+  if (isa<CallInst>(&I)) {
+    CallInst *call = cast<CallInst>(&I);
+    called_name = call->getCalledFunction()->getName().str();
+  }
+
+  func_name = I.getFunction()->getName().str();
+
+  // Included-list
+  if ((!called_name.empty() &&
+       std::regex_match(called_name, includeFunctionRgx)) ||
+      std::regex_match(func_name, includeFunctionRgx)) {
+    return true;
+  }
+
+  // Excluded-list
+  if ((!called_name.empty() &&
+       std::regex_match(called_name, excludeFunctionRgx)) ||
+      std::regex_match(func_name, excludeFunctionRgx)) {
+    return false;
+  }
+
+  // If excluded-list is empty and included-list is not, we are done
+  if (VfclibInstExcludeFile.empty() and not VfclibInstIncludeFile.empty()) {
+    return false;
+  }
+
+  return true;
+}
+
+std::string getInstID(Instruction &I) {
+  return I.getFunction()->getName().str() + "_" + I.getOpcodeName() + "_" +
+         std::to_string(I.getDebugLoc().getLine()) + "_" +
+         std::to_string((unsigned long int)(void *)&I);
+}
+
+std::pair<Instruction *, Instruction *>
+depends(Instruction &I, Instruction &II,
+        std::pair<std::vector<Instruction *>, std::vector<Instruction *>>
+            &memInstAndFops) {
+  for (auto U : II.users()) {
+    if (U == &I) {
+      if (II.getOpcode() == Instruction::Load ||
+          II.getOpcode() == Instruction::Store) {
+        memInstAndFops.first.push_back(&II);
+        memInstAndFops.second.push_back(&I);
+      } else {
+        return std::pair<Instruction *, Instruction *>{&II, &I};
+      }
+    }
+  }
+
+  for (auto U : I.users()) {
+    if (U == &II) {
+      if (II.getOpcode() == Instruction::Load ||
+          II.getOpcode() == Instruction::Store) {
+        memInstAndFops.first.push_back(&II);
+        memInstAndFops.second.push_back(&I);
+      } else {
+        return std::pair<Instruction *, Instruction *>{&I, &II};
+      }
+    }
+  }
+
+  return std::pair<Instruction *, Instruction *>{};
+}
+
+enum MemDep isMemoryDependent(Instruction *I, Instruction *II) {
+  // RAW
+  if (isa<LoadInst>(I) && isa<StoreInst>(II)) {
+    LoadInst *LI = cast<LoadInst>(I);
+    StoreInst *SI = cast<StoreInst>(II);
+
+    if (LI->getPointerOperand() == SI->getPointerOperand()) {
+      return MEM_RAW;
+    }
+  }
+  if (isa<LoadInst>(I) && isa<CallInst>(II)) {
+    LoadInst *LI = cast<LoadInst>(I);
+    CallInst *CI = cast<CallInst>(II);
+    for (auto U : LI->users()) {
+      if (U == CI) {
+        return MEM_RAW;
+      }
+    }
+  }
+  // RAR
+  if (isa<LoadInst>(I) && isa<LoadInst>(II)) {
+    LoadInst *LI = cast<LoadInst>(I);
+    LoadInst *LII = cast<LoadInst>(II);
+
+    if (LI->getPointerOperand() == LII->getPointerOperand()) {
+      return MEM_RAR;
+    }
+  }
+  // WAR
+  if (isa<StoreInst>(I) && isa<LoadInst>(II)) {
+    StoreInst *SI = cast<StoreInst>(I);
+    LoadInst *LI = cast<LoadInst>(II);
+
+    if (LI->getPointerOperand() == SI->getPointerOperand()) {
+      return MEM_WAR;
+    }
+  }
+  // WAW
+  if (isa<StoreInst>(I) && isa<StoreInst>(II)) {
+    StoreInst *SI = cast<StoreInst>(I);
+    StoreInst *SII = cast<StoreInst>(II);
+
+    if (SI->getPointerOperand() == SII->getPointerOperand()) {
+      return MEM_WAW;
+    }
+  }
+
+  return MEM_NONE;
+}
+
+std::vector<Instruction *> getInstrDependency(
+    Instruction *I, Instruction *OriginalI, MemorySSA &MSSA,
+    std::pair<std::vector<Instruction *>, std::vector<Instruction *>>
+        memInstAndFops) {
+  std::vector<Instruction *> to_return;
+  auto memInst = memInstAndFops.first;
+  auto fops = memInstAndFops.second;
+
+  if (MemoryUseOrDef *UOD = MSSA.getMemoryAccess(I)) {
+
+    if (MSSA.isLiveOnEntryDef(UOD->getDefiningAccess())) {
+      return to_return;
+    }
+
+    std::vector<Instruction *> newMemInst;
+
+    if (MemoryDef *NEW_DEF = dyn_cast<MemoryDef>(UOD->getDefiningAccess())) {
+      Instruction *mem = NEW_DEF->getMemoryInst();
+      newMemInst.push_back(mem);
+    }
+    if (MemoryPhi *PHI = dyn_cast<MemoryPhi>(UOD->getDefiningAccess())) {
+      MemoryDef *DEF1 = dyn_cast<MemoryDef>(PHI->getIncomingValue(0));
+      Instruction *mem1 = DEF1->getMemoryInst();
+      newMemInst.push_back(mem1);
+
+      MemoryDef *DEF2 = dyn_cast<MemoryDef>(PHI->getIncomingValue(1));
+      Instruction *mem2 = DEF2->getMemoryInst();
+      newMemInst.push_back(mem2);
+    }
+
+    for (auto mem : newMemInst) {
+      auto it = std::find(memInst.begin(), memInst.end(), mem);
+
+      if (mem == OriginalI) {
+        continue;
+      } else if (it != memInst.end() &&
+                 isMemoryDependent(OriginalI, mem) == MEM_RAW) {
+        int i = it - memInst.begin();
+        to_return.push_back(fops[i]);
+      } else if (isMemoryDependent(OriginalI, mem) == MEM_RAW &&
+                 isa<StoreInst>(mem)) {
+        StoreInst *S = cast<StoreInst>(mem);
+        if (isa<LoadInst>(S->getOperandUse(0))) {
+          LoadInst *LI = cast<LoadInst>(S->getOperandUse(0));
+          auto to_merge = getInstrDependency(mem, LI, MSSA, memInstAndFops);
+          to_return.insert(to_return.end(), to_merge.begin(), to_merge.end());
+        }
+      } else if (isMemoryDependent(OriginalI, mem) != MEM_RAW) {
+        auto to_merge =
+            getInstrDependency(mem, OriginalI, MSSA, memInstAndFops);
+        to_return.insert(to_return.end(), to_merge.begin(), to_merge.end());
+      }
+    }
+  }
+
+  return to_return;
+}
+
 struct VfclibProfile : public ModulePass {
   static char ID;
   pt::ptree profile;
@@ -240,335 +711,10 @@ struct VfclibProfile : public ModulePass {
     AU.setPreservesCFG();
     AU.addRequired<TargetLibraryInfoWrapperPass>();
     AU.addRequired<LoopInfoWrapperPass>();
+    AU.addRequired<MemorySSAWrapperPass>();
   }
 
   VfclibProfile() : ModulePass(ID) { instr_cpt = 0; }
-
-  bool mustInstrument(Type *T) {
-    if (T->isPointerTy()) {
-      T = T->getPointerElementType();
-    } else if (T->isVectorTy()) {
-      VectorType *t = static_cast<VectorType *>(T);
-      T = t->getElementType();
-    }
-
-    return T->isFloatTy() || T->isDoubleTy();
-  }
-
-  bool mustInstrument(Instruction &I) {
-    bool isCall = isa<CallInst>(I);
-
-    if (isCall) {
-      Function *calledFunction = cast<CallInst>(I).getCalledFunction();
-      isCall = !(calledFunction == NULL || calledFunction->isIntrinsic());
-    }
-
-    bool isArithmetic = getFops(I) != FOP_IGNORE;
-    bool useFloat = false;
-
-    if (mustInstrument(I.getType())) {
-      useFloat = true;
-    }
-
-    for (Use *U = I.op_begin(); U != I.op_end(); U++) {
-      if (mustInstrument(U->get()->getType())) {
-        useFloat = true;
-      }
-    }
-
-    return (isCall || isArithmetic) && useFloat;
-  }
-
-  void add_instr_metadata(pt::ptree &instr, Instruction &I, Loop *L,
-                          Function &F, Module &M) {
-    DebugLoc loc = I.getDebugLoc();
-
-    std::string func_name = F.getName().str();
-    std::string loop_id = (L) ? func_name +
-                                    std::to_string(L->getStartLoc().getLine()) +
-                                    std::to_string(L->getLoopDepth())
-                              : "none";
-
-    std::string file_name = M.getSourceFileName();
-
-    unsigned column = (loc) ? loc.getCol() : 0;
-    unsigned line = (loc) ? loc.getLine() : 0;
-    unsigned depth = (L) ? L->getLoopDepth() : 0;
-
-    std::string id =
-        file_name + "/" + func_name + "/" + std::to_string(instr_cpt++);
-
-    LLVMContext &C = I.getContext();
-    MDNode *N = MDNode::get(C, MDString::get(C, id));
-    I.setMetadata("VFC_PROFILE_NAME", N);
-
-    instr.add("id", id);
-    instr.add("filepath", getSourceFileNameAbsPath(M));
-    instr.add("function", func_name);
-    instr.add("line", line);
-    instr.add("column", column);
-    instr.add("loop", loop_id);
-    instr.add("depth", depth);
-  }
-
-  pt::ptree add_arg_metadata(Function *F, Value *V, int i) {
-    pt::ptree arg;
-    Type *T = (V->getType()->isVectorTy())
-                  ? static_cast<VectorType *>(V->getType())->getElementType()
-                  : V->getType();
-    Ftypes type;
-    unsigned precision, range, size = 1;
-
-    if (FloatTy == T) {
-      type = FLOAT;
-      precision = 23;
-      range = 8;
-    } else if (FloatPtrTy == T) {
-      type = FLOAT_PTR;
-      precision = 23;
-      range = 8;
-      size = getSizeOf(V, F);
-    } else if (DoubleTy == T) {
-      type = DOUBLE;
-      precision = 52;
-      range = 11;
-    } else if (DoublePtrTy == T) {
-      type = DOUBLE_PTR;
-      precision = 52;
-      range = 11;
-      size = getSizeOf(V, F);
-    } else {
-      V->getType()->print(errs());
-      std::cerr << " Arg type not suported" << std::endl;
-    }
-
-    arg.add("name", getArgName(F, V, i));
-    arg.add("size", size);
-    arg.add("data_type", type);
-    arg.add("precision", precision);
-    arg.add("range", range);
-
-    return arg;
-  }
-
-  void add_fops_metadata(pt::ptree &fops, Instruction &I, Loop *L, Function &F,
-                         Module &M) {
-    unsigned vec_size = isVectorized(I);
-    bool use_float = false, use_double = false;
-    haveFloatingPointArithmetic(I, &use_float, &use_double);
-    unsigned precision = (use_float) ? 23 : 52;
-    unsigned range = (use_float) ? 8 : 11;
-
-    add_instr_metadata(fops, I, L, F, M);
-
-    fops.add("type", getFops(I));
-    fops.add("data_type", int(use_double));
-    fops.add("vector_size", vec_size);
-
-    unsigned input_cpt = 0, output_cpt = 0;
-    std::vector<pt::ptree> input_args, output_args;
-
-    if (mustInstrument(I.getType())) {
-      output_cpt++;
-      output_args.push_back(add_arg_metadata(&F, &I, -1));
-    }
-
-    int i = 0;
-    for (Use *U = I.op_begin(); U != I.op_end(); U++, i++) {
-      Type *arg_type = U->get()->getType();
-
-      if (mustInstrument(arg_type)) {
-        pt::ptree arg = add_arg_metadata(&F, U->get(), i);
-
-        if (arg_type == DoublePtrTy || arg_type == FloatPtrTy) {
-          output_cpt++;
-          output_args.push_back(arg);
-        }
-
-        input_cpt++;
-        input_args.push_back(arg);
-      }
-    }
-
-    fops.add("nb_input", input_cpt);
-    for (auto &input : input_args)
-      fops.add_child("input", input);
-
-    fops.add("nb_output", output_cpt);
-    for (auto &output : output_args)
-      fops.add_child("output", output);
-  }
-
-  void add_call_metadata(pt::ptree &call, Instruction &I, Loop *L, Function &F,
-                         Module &M) {
-    LibFunc libfunc;
-    const TargetLibraryInfo &TLI = getTLI(&F);
-    bool is_from_library = TLI.getLibFunc(F.getName(), libfunc);
-    std::string library_name =
-        (is_from_library) ? TLI.getName(libfunc).str() : "none";
-    unsigned input_cpt = 0, output_cpt = 0;
-    std::vector<pt::ptree> input_args, output_args;
-
-    if (mustInstrument(I.getType())) {
-      output_cpt++;
-      output_args.push_back(add_arg_metadata(&F, &I, -1));
-    }
-
-    int i = 0;
-    for (Use *U = I.op_begin(); U != I.op_end(); U++, i++) {
-      Type *arg_type = U->get()->getType();
-
-      if (mustInstrument(arg_type)) {
-        pt::ptree arg = add_arg_metadata(&F, U->get(), i);
-
-        if (arg_type == DoublePtrTy || arg_type == FloatPtrTy) {
-          output_cpt++;
-          output_args.push_back(arg);
-        }
-
-        input_cpt++;
-        input_args.push_back(arg);
-      }
-    }
-
-    add_instr_metadata(call, I, L, F, M);
-
-    call.add("name", cast<CallInst>(I).getCalledFunction()->getName().str());
-    call.add("library", library_name);
-
-    call.add("nb_input", input_cpt);
-    for (auto &input : input_args)
-      call.add_child("input", input);
-
-    call.add("nb_output", output_cpt);
-    for (auto &output : output_args)
-      call.add_child("output", output);
-  }
-
-  // https://thispointer.com/find-and-replace-all-occurrences-of-a-sub-string-in-c/
-  void findAndReplaceAll(std::string &data, std::string toSearch,
-                         std::string replaceStr) {
-    // Get the first occurrence
-    size_t pos = data.find(toSearch);
-    // Repeat till end is reached
-    while (pos != std::string::npos) {
-      // Replace this occurrence of Sub String
-      data.replace(pos, toSearch.size(), replaceStr);
-      // Get the next occurrence from the current position
-      pos = data.find(toSearch, pos + replaceStr.size());
-    }
-  }
-
-  void escape_regex(std::string &str) {
-    findAndReplaceAll(str, ".", "\\.");
-    // ECMAScript needs .* instead of * for matching any charactere
-    // http://www.cplusplus.com/reference/regex/ECMAScript/
-    findAndReplaceAll(str, "*", ".*");
-  }
-
-  std::regex parseFunctionSetFile(Module &M, cl::opt<std::string> &fileName) {
-    // Skip if empty fileName
-    if (fileName.empty()) {
-      return std::regex("");
-    }
-
-    // Open File
-    std::ifstream loopstream(fileName.c_str());
-    if (!loopstream.is_open()) {
-      errs() << "Cannot open " << fileName << "\n";
-      report_fatal_error("libVFCInstrument fatal error");
-    }
-
-    // Parse File, if module name matches, add function to FunctionSet
-    int lineno = 0;
-    std::string line;
-
-    // return the absolute path of the source file
-    std::string moduleName = getSourceFileNameAbsPath(M);
-    moduleName = (moduleName.empty()) ? M.getModuleIdentifier() : moduleName;
-
-    // Regex that contains all regex for each function
-    std::string moduleRegex = "";
-
-    while (std::getline(loopstream, line)) {
-      lineno++;
-      StringRef l = StringRef(line);
-
-      // Ignore empty or commented lines
-      if (l.startswith("#") || l.trim() == "") {
-        continue;
-      }
-      std::pair<StringRef, StringRef> p = l.split(" ");
-
-      if (p.second.equals("")) {
-        errs() << "Syntax error in exclusion/inclusion file " << fileName << ":"
-               << lineno << "\n";
-        report_fatal_error("libVFCInstrument fatal error");
-      } else {
-        std::string mod = p.first.trim();
-        std::string fun = p.second.trim();
-
-        // If mod is not an absolute path,
-        // we search any module containing mod
-        if (sys::path::is_relative(mod)) {
-          mod = "*" + sys::path::get_separator().str() + mod;
-        }
-        // If the user does not specify extension for the module
-        // we match any extension
-        if (not sys::path::has_extension(mod)) {
-          mod += ".*";
-        }
-
-        escape_regex(mod);
-        escape_regex(fun);
-
-        if (std::regex_match(moduleName, std::regex(mod))) {
-          moduleRegex += fun + "|";
-        }
-      }
-    }
-
-    loopstream.close();
-    // Remove the extra | at the end
-    if (not moduleRegex.empty()) {
-      moduleRegex.pop_back();
-    }
-    return std::regex(moduleRegex);
-  }
-
-  bool isIncluded(Instruction &I, std::regex &includeFunctionRgx,
-                  std::regex &excludeFunctionRgx) {
-    std::string func_name;
-    std::string called_name;
-
-    if (isa<CallInst>(&I)) {
-      CallInst *call = cast<CallInst>(&I);
-      called_name = call->getCalledFunction()->getName().str();
-    }
-
-    func_name = I.getFunction()->getName().str();
-
-    // Included-list
-    if ((!called_name.empty() &&
-         std::regex_match(called_name, includeFunctionRgx)) ||
-        std::regex_match(func_name, includeFunctionRgx)) {
-      return true;
-    }
-
-    // Excluded-list
-    if ((!called_name.empty() &&
-         std::regex_match(called_name, excludeFunctionRgx)) ||
-        std::regex_match(func_name, excludeFunctionRgx)) {
-      return false;
-    }
-
-    // If excluded-list is empty and included-list is not, we are done
-    if (VfclibInstExcludeFile.empty() and not VfclibInstIncludeFile.empty()) {
-      return false;
-    }
-
-    return true;
-  }
 
   virtual bool runOnModule(Module &M) {
     // initialize common types
@@ -597,7 +743,18 @@ struct VfclibProfile : public ModulePass {
       if (F.size() == 0)
         continue;
 
+      std::ofstream dotFile;
+      std::string func_name = F.getName().str();
+      std::string mod_name = M.getSourceFileName();
+      dotFile.open(mod_name.substr(0, mod_name.find(".")) + "_" + func_name +
+                   ".dot");
+
+      dotFile << "strict digraph {" << std::endl;
+
       LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
+      MemorySSA &MSSA = getAnalysis<MemorySSAWrapperPass>(F).getMSSA();
+      std::pair<std::vector<Instruction *>, std::vector<Instruction *>>
+          memInstAndFops;
 
       instr_cpt = 0;
       for (auto &B : F) {
@@ -606,20 +763,58 @@ struct VfclibProfile : public ModulePass {
         for (auto &I : B) {
           // if the instruction is a call to an included function
           // or if the instruction is in an included function
+          if (!I.getDebugLoc()) {
+            continue;
+          }
+
           if (mustInstrument(I) &&
               isIncluded(I, includeFunctionRgx, excludeFunctionRgx)) {
             pt::ptree instruction;
 
+            for (auto &BB : F) {
+              for (auto &&II : BB) {
+                if (&II == &I || (!II.getDebugLoc())) {
+                  continue;
+                }
+                auto pair = depends(I, II, memInstAndFops);
+                if (pair.first && pair.second) {
+                  dotFile << "  " << getInstID(*(pair.first)) << " -> "
+                          << getInstID(*(pair.second)) << ";" << std::endl;
+                }
+              }
+            }
+
+            dotFile << "  " << getInstID(I) << " [style=filled fillcolor=blue];"
+                    << std::endl;
+
             if (isa<CallInst>(I)) {
-              add_call_metadata(instruction, I, L, F, M);
+              add_call_metadata(instr_cpt, instruction, I, L, F, M);
               profile.add_child("call", instruction);
             } else {
-              add_fops_metadata(instruction, I, L, F, M);
+              add_fops_metadata(instr_cpt, instruction, I, L, F, M);
               profile.add_child("fops", instruction);
             }
           }
         }
       }
+
+      for (int i = 0; i < memInstAndFops.first.size(); i++) {
+        Instruction *memoryInst = memInstAndFops.first[i];
+        Instruction *I = memInstAndFops.second[i];
+
+        std::vector<Instruction *> Instructions =
+            getInstrDependency(memoryInst, memoryInst, MSSA, memInstAndFops);
+        for (auto &II : Instructions) {
+          if (II != I) {
+            dotFile << "  " << getInstID(*II) << " -> " << getInstID(*I) << ";"
+                    << std::endl;
+          }
+        }
+      }
+
+      dotFile << "}" << std::endl;
+
+      dotFile.close();
     }
 
     pt::write_xml(

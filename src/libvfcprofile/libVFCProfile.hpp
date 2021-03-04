@@ -25,11 +25,13 @@
 
 #include "../../config.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/MemorySSA.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Mangler.h"
@@ -52,8 +54,14 @@ enum Ftypes { FLOAT, DOUBLE, FLOAT_PTR, DOUBLE_PTR };
 // Types
 llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy;
 
+// Structure Types
+StructType *instStruct, *fopsStruct, *callStruct;
+
 // Floating Point Ops
 enum Fops { FOP_ADD, FOP_SUB, FOP_MUL, FOP_DIV, FOP_CMP, FOP_IGNORE };
+
+// Types of memory dependency
+enum MemDep { MEM_NONE = 0, MEM_RAW, MEM_RAR, MEM_WAR, MEM_WAW };
 
 std::string Fops2str[] = {"fadd", "fsub", "fmul", "fdiv", "fcmp", "fignore"};
 
