@@ -594,109 +594,101 @@ depends(Instruction &I, Instruction &II,
   return std::pair<Instruction *, Instruction *>{};
 }
 
-enum MemDep isMemoryDependent(Instruction *I, Instruction *II) {
-  // RAW
-  if (isa<LoadInst>(I) && isa<StoreInst>(II)) {
-    LoadInst *LI = cast<LoadInst>(I);
-    StoreInst *SI = cast<StoreInst>(II);
-
-    if (LI->getPointerOperand() == SI->getPointerOperand()) {
-      return MEM_RAW;
-    }
-  }
-  if (isa<LoadInst>(I) && isa<CallInst>(II)) {
-    LoadInst *LI = cast<LoadInst>(I);
-    CallInst *CI = cast<CallInst>(II);
-    for (auto U : LI->users()) {
-      if (U == CI) {
-        return MEM_RAW;
-      }
-    }
-  }
-  // RAR
-  if (isa<LoadInst>(I) && isa<LoadInst>(II)) {
-    LoadInst *LI = cast<LoadInst>(I);
-    LoadInst *LII = cast<LoadInst>(II);
-
-    if (LI->getPointerOperand() == LII->getPointerOperand()) {
-      return MEM_RAR;
-    }
-  }
-  // WAR
-  if (isa<StoreInst>(I) && isa<LoadInst>(II)) {
-    StoreInst *SI = cast<StoreInst>(I);
-    LoadInst *LI = cast<LoadInst>(II);
-
-    if (LI->getPointerOperand() == SI->getPointerOperand()) {
-      return MEM_WAR;
-    }
-  }
-  // WAW
-  if (isa<StoreInst>(I) && isa<StoreInst>(II)) {
-    StoreInst *SI = cast<StoreInst>(I);
-    StoreInst *SII = cast<StoreInst>(II);
-
-    if (SI->getPointerOperand() == SII->getPointerOperand()) {
-      return MEM_WAW;
-    }
-  }
-
-  return MEM_NONE;
-}
-
-std::vector<Instruction *> getInstrDependency(
-    Instruction *I, Instruction *OriginalI, MemorySSA &MSSA,
+std::vector<Instruction *> getSourceInstructions(
+    Function *F, Instruction *I, BasicBlock *OriginalBB, BasicBlock *BB,
     std::pair<std::vector<Instruction *>, std::vector<Instruction *>>
         memInstAndFops) {
+  // instructions to return
   std::vector<Instruction *> to_return;
+  // vector of memoryInst
   auto memInst = memInstAndFops.first;
+  // vector of floating point operations
   auto fops = memInstAndFops.second;
+  // get an iterator on the instruction in the basic block
+  auto it = BB->end();
+  // initial reseach flag
+  bool flag = false;
 
-  if (MemoryUseOrDef *UOD = MSSA.getMemoryAccess(I)) {
+  /*
+  I->print(errs());
+  std::cerr << std::endl;
+  */
 
-    if (MSSA.isLiveOnEntryDef(UOD->getDefiningAccess())) {
-      return to_return;
+  if (OriginalBB == NULL) {
+    flag = true;
+    it = BB->begin();
+    while (it != BB->end() && &(*it) != I) {
+      it++;
     }
+  }
 
-    std::vector<Instruction *> newMemInst;
+  do {
+    it--;
 
-    if (MemoryDef *NEW_DEF = dyn_cast<MemoryDef>(UOD->getDefiningAccess())) {
-      Instruction *mem = NEW_DEF->getMemoryInst();
-      newMemInst.push_back(mem);
-    }
-    if (MemoryPhi *PHI = dyn_cast<MemoryPhi>(UOD->getDefiningAccess())) {
-      MemoryDef *DEF1 = dyn_cast<MemoryDef>(PHI->getIncomingValue(0));
-      Instruction *mem1 = DEF1->getMemoryInst();
-      newMemInst.push_back(mem1);
+    if (isa<StoreInst>(*it) && isa<LoadInst>(I)) {
+      StoreInst *SI = cast<StoreInst>(&(*it));
+      LoadInst *LI = cast<LoadInst>(I);
+      auto mem_it = std::find(memInst.begin(), memInst.end(), &(*it));
 
-      MemoryDef *DEF2 = dyn_cast<MemoryDef>(PHI->getIncomingValue(1));
-      Instruction *mem2 = DEF2->getMemoryInst();
-      newMemInst.push_back(mem2);
-    }
-
-    for (auto mem : newMemInst) {
-      auto it = std::find(memInst.begin(), memInst.end(), mem);
-
-      if (mem == OriginalI) {
-        continue;
-      } else if (it != memInst.end() &&
-                 isMemoryDependent(OriginalI, mem) == MEM_RAW) {
-        int i = it - memInst.begin();
-        to_return.push_back(fops[i]);
-      } else if (isMemoryDependent(OriginalI, mem) == MEM_RAW &&
-                 isa<StoreInst>(mem)) {
-        StoreInst *S = cast<StoreInst>(mem);
-        if (isa<LoadInst>(S->getOperandUse(0))) {
-          LoadInst *LI = cast<LoadInst>(S->getOperandUse(0));
-          auto to_merge = getInstrDependency(mem, LI, MSSA, memInstAndFops);
+      if (SI->getPointerOperand() == LI->getPointerOperand()) {
+        if (mem_it != memInst.end()) {
+          unsigned i = mem_it - memInst.begin();
+          to_return.push_back(fops[i]);
+        } else {
+          /*
+          std::cerr << "    Store Inst -> ";
+          it->print(errs());
+          std::cerr << std::endl;
+          */
+          auto to_merge =
+              getSourceInstructions(F, &(*it), OriginalBB, BB, memInstAndFops);
           to_return.insert(to_return.end(), to_merge.begin(), to_merge.end());
         }
-      } else if (isMemoryDependent(OriginalI, mem) != MEM_RAW) {
-        auto to_merge =
-            getInstrDependency(mem, OriginalI, MSSA, memInstAndFops);
-        to_return.insert(to_return.end(), to_merge.begin(), to_merge.end());
       }
+    } else if (isa<LoadInst>(*it) && isa<StoreInst>(I)) {
+      LoadInst *LI = cast<LoadInst>(&(*it));
+      StoreInst *SI = cast<StoreInst>(I);
+      auto mem_it = std::find(memInst.begin(), memInst.end(), &(*it));
+
+      if (SI->getValueOperand() == cast<Value>(LI)) {
+        if (mem_it != memInst.end()) {
+          unsigned i = mem_it - memInst.begin();
+          to_return.push_back(fops[i]);
+        } else {
+          /*
+          std::cerr << "    Load Inst -> ";
+          it->print(errs());
+          std::cerr << std::endl;
+          */
+          auto to_merge =
+              getSourceInstructions(F, &(*it), OriginalBB, BB, memInstAndFops);
+          to_return.insert(to_return.end(), to_merge.begin(), to_merge.end());
+        }
+      }
+    } else if (isa<GetElementPtrInst>(*it) && isa<LoadInst>(I)) {
+      GetElementPtrInst *GEP = cast<GetElementPtrInst>(&(*it));
+      LoadInst *LI = cast<LoadInst>(I);
+      /* To complete */
     }
+    /*
+    else{
+      std::cerr << "  Other ->";
+      it->print(errs());
+      std::cerr << std::endl;
+    }
+    */
+  } while (it != BB->begin());
+
+  if (flag) {
+    OriginalBB = BB;
+  } else if (OriginalBB == BB) {
+    return to_return;
+  }
+
+  for (auto iit = pred_begin(BB); iit != pred_end(BB); ++iit) {
+    auto to_merge =
+        getSourceInstructions(F, I, OriginalBB, (*iit), memInstAndFops);
+    to_return.insert(to_return.end(), to_merge.begin(), to_merge.end());
   }
 
   return to_return;
@@ -706,6 +698,7 @@ struct VfclibProfile : public ModulePass {
   static char ID;
   pt::ptree profile;
   unsigned instr_cpt;
+  std::map<Instruction *, Value *> InstrToStruct;
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
@@ -802,8 +795,8 @@ struct VfclibProfile : public ModulePass {
         Instruction *memoryInst = memInstAndFops.first[i];
         Instruction *I = memInstAndFops.second[i];
 
-        std::vector<Instruction *> Instructions =
-            getInstrDependency(memoryInst, memoryInst, MSSA, memInstAndFops);
+        std::vector<Instruction *> Instructions = getSourceInstructions(
+            &F, memoryInst, NULL, memoryInst->getParent(), memInstAndFops);
         for (auto &II : Instructions) {
           if (II != I) {
             dotFile << "  " << getInstID(*II) << " -> " << getInstID(*I) << ";"

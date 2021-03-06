@@ -52,10 +52,11 @@ using namespace llvm;
 enum Ftypes { FLOAT, DOUBLE, FLOAT_PTR, DOUBLE_PTR };
 
 // Types
-llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy;
+llvm::Type *FloatTy, *DoubleTy, *FloatPtrTy, *DoublePtrTy, *Int32Ty, *Int8PtrTy,
+    *VoidPtrTy;
 
 // Structure Types
-StructType *instStruct, *fopsStruct, *callStruct;
+StructType *instStruct, *fopsStruct, *callStruct, *argStruct;
 
 // Floating Point Ops
 enum Fops { FOP_ADD, FOP_SUB, FOP_MUL, FOP_DIV, FOP_CMP, FOP_IGNORE };
